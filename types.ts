@@ -1,4 +1,5 @@
 
+
 export interface Message {
   id: string;
   role: 'user' | 'model';
@@ -6,7 +7,7 @@ export interface Message {
   timestamp: number;
   isMemory?: boolean; // If saved to "Moments"
   attachment?: {
-      type: 'image' | 'file' | 'location' | 'poll' | 'sticker' | 'audio';
+      type: 'image' | 'file' | 'location' | 'poll' | 'sticker' | 'audio' | 'system';
       url?: string;
       data?: any;
   };
@@ -56,7 +57,8 @@ export interface Character {
   customArchives?: CustomArchive[];
 
   // V22: AI Core Selection
-  aiModel?: 'gemini-2.0-flash' | 'deepseek-v3.2';
+  // Updated model choice to gemini-3-flash-preview
+  aiModel?: 'gemini-3-flash-preview' | 'deepseek-v3.2';
 }
 
 // Custom Theme for individual chats

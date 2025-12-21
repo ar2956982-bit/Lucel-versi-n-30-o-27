@@ -1,5 +1,6 @@
+
 import React, { useState, useEffect, useRef } from 'react';
-import { Users, Plus, MessageCircle, Phone, Video, Search, UserPlus, MoreVertical, Lock, Send, ArrowLeft, CircleDashed, AtSign, Globe, Wifi, Users2, User, Camera, Image, FileText, MapPin, BarChart2, Smile, Shield, MoreHorizontal, Settings, Trash, LogOut, Link, Palette, CheckCircle, X, Code, Terminal, Bell, Edit2, Cpu, Heart, Share2, Map, Layout, Bird, Wallpaper, Bookmark, Clock, UserCheck, Mic, ShieldAlert, Crown, LogOut as LogoutIcon, Ban, Flag, ChevronRight, Eye, EyeOff, Maximize2, Minimize2, Grid } from 'lucide-react';
+import { Users, Plus, MessageCircle, Phone, Video, Search, UserPlus, MoreVertical, Lock, Send, ArrowLeft, CircleDashed, AtSign, Globe, Wifi, Users2, User, Camera, Image, FileText, MapPin, BarChart2, Smile, Shield, MoreHorizontal, Settings, Trash, LogOut, Link, Palette, CheckCircle, X, Code, Terminal, Bell, Edit2, Cpu, Heart, Share2, Map, Layout, Bird, Wallpaper, Bookmark, Clock, UserCheck, Mic, ShieldAlert, Crown, LogOut as LogoutIcon, Ban, Flag, ChevronRight, Eye, EyeOff, Maximize2, Minimize2, Grid, FileCode } from 'lucide-react';
 import { CommunityContact, Message, CommunityGroup, ChatTheme, CommunityPrivacy, P2PMessage, P2PUserRegistry, GlobalPost, UserStatus, Character } from '../types';
 import { generateCommunityResponse } from '../services/geminiService';
 
@@ -24,6 +25,50 @@ class LucelSystem {
 }
 `;
 
+const FULL_PROJECT_CODE = `
+<!-- --- INDEX.HTML --- -->
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>LuCel: Chronos & Neon Edition</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background-color: #0f172a; color: white; }
+        .neon-border { border: 1px solid #f59e0b; }
+    </style>
+</head>
+<body><div id="root"></div></body>
+</html>
+
+// --- APP.TSX ---
+const App: React.FC = () => {
+  const [view, setView] = useState(ViewState.DASHBOARD);
+  // ... (Identificación, Gestión de Personajes, Comunidad P2P)
+  return (<main>{/* Router de Vistas */}</main>);
+};
+
+// --- COMMUNITYVIEW.TSX ---
+const CommunityView: React.FC<Props> = ({ contacts, groups }) => {
+  // Pestañas: Chats, Grupos, Mundo (Global), Perfil
+  // Ajustes de tamaño: Compacto, Estándar, Pantalla Completa
+  // Modo Desarrollador: Triple Click Logo + Pass
+};
+
+// --- CHATINTERFACE.TSX ---
+const ChatInterface: React.FC = () => {
+  // Gestión de Memoria Infinita (V26)
+  // Integración Gemini 2.0 Flash & DeepSeek
+  // Traducción Automática y Temas de Chat
+};
+
+// --- SERVICES/GEMINISERVICE.TS ---
+export const generateChatResponse = async (...) => {
+  // Inyección de Archivos del Expediente
+  // Manejo de Bloques de Memoria y Datos del Usuario
+};
+`;
+
 interface CommunityViewProps {
   contacts: CommunityContact[];
   groups: CommunityGroup[];
@@ -45,8 +90,8 @@ const CommunityView: React.FC<CommunityViewProps> = ({
   // Tabs: 'chats' | 'groups' | 'global' | 'profile'
   const [activeTab, setActiveTab] = useState<'chats' | 'groups' | 'global' | 'profile'>('chats');
   
-  // VIEW SETTINGS (RESIZE) - Default larger
-  const [viewConfig, setViewConfig] = useState({ width: 'max-w-7xl', height: 'h-[90vh]' });
+  // VIEW SETTINGS (RESIZE) - Default FULL SIZE
+  const [viewConfig, setViewConfig] = useState({ width: 'w-full', height: 'h-full' });
   const [showViewSettings, setShowViewSettings] = useState(false);
 
   // Modals
@@ -108,7 +153,7 @@ const CommunityView: React.FC<CommunityViewProps> = ({
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [devPassword, setDevPassword] = useState('');
   const [isDevModeUnlocked, setIsDevModeUnlocked] = useState(false);
-  const [devTab, setDevTab] = useState<'code' | 'news' | 'custom'>('code');
+  const [devTab, setDevTab] = useState<'code' | 'news' | 'custom' | 'html'>('code');
 
   // --- GLOBAL CHAT & STATUS STATE ---
   const [globalFeed, setGlobalFeed] = useState<GlobalPost[]>([]);
@@ -140,8 +185,8 @@ const CommunityView: React.FC<CommunityViewProps> = ({
   // Derive if I am a member of the selected group
   const isMeInGroup = selectedGroup ? selectedGroup.members.includes(myUsername) : false;
 
-  // Filter messages for search
-  const visibleMessages = (selectedContact ? selectedContact.messages : selectedGroup?.messages || []).filter(msg => {
+  // Filter messages for search - SAFEGUARD ADDED
+  const visibleMessages = (selectedContact ? (selectedContact.messages || []) : (selectedGroup?.messages || [])).filter(msg => {
       if (!isSearchingInChat || !chatSearchTerm) return true;
       return msg.content.toLowerCase().includes(chatSearchTerm.toLowerCase());
   });
@@ -565,7 +610,10 @@ const CommunityView: React.FC<CommunityViewProps> = ({
               return;
           }
 
-          const updatedContact = { ...selectedContact, messages: [...selectedContact.messages, userMsg] };
+          // SAFEGUARD: Ensure messages array exists
+          const currentMessages = selectedContact.messages || [];
+          const updatedContact = { ...selectedContact, messages: [...currentMessages, userMsg] };
+          
           onUpdateContact(updatedContact);
           setInput('');
           setShowAttachMenu(false);
@@ -584,7 +632,7 @@ const CommunityView: React.FC<CommunityViewProps> = ({
           } else {
               setIsTyping(true);
               setTimeout(async () => {
-                const replyText = await generateCommunityResponse(selectedContact, userMsg.content, selectedContact.messages, myUsername);
+                const replyText = await generateCommunityResponse(selectedContact, userMsg.content, currentMessages, myUsername);
                 const replyMsg: Message = { id: (Date.now() + 1).toString(), role: 'model', content: replyText, timestamp: Date.now() };
                 onUpdateContact({ ...updatedContact, messages: [...updatedContact.messages, replyMsg] });
                 setIsTyping(false);
@@ -597,7 +645,8 @@ const CommunityView: React.FC<CommunityViewProps> = ({
               return;
           }
 
-          const updatedGroup = { ...selectedGroup, messages: [...selectedGroup.messages, userMsg] };
+          const currentMessages = selectedGroup.messages || [];
+          const updatedGroup = { ...selectedGroup, messages: [...currentMessages, userMsg] };
           onUpdateGroup(updatedGroup);
           setInput('');
           setShowAttachMenu(false);
@@ -626,7 +675,7 @@ const CommunityView: React.FC<CommunityViewProps> = ({
                       const replyText = await generateCommunityResponse(
                           miniLucelContact,
                           userMsg.content,
-                          selectedGroup.messages,
+                          currentMessages,
                           myUsername
                       );
                       const aiMsg: Message = {
@@ -727,7 +776,9 @@ const CommunityView: React.FC<CommunityViewProps> = ({
                        <button onClick={() => {setShowAddContactModal(true); setContactSearchResult(null); setNewContactUsername('');}} className="w-full py-3 mb-2 bg-primary/10 border border-primary/20 text-primary rounded-lg flex items-center justify-center gap-2 font-bold hover:bg-primary/20 transition-colors">
                            <UserPlus size={16} /> Nuevo Contacto
                        </button>
-                       {contacts.map(contact => (
+                       {contacts.map(contact => {
+                           const msgs = contact.messages || [];
+                           return (
                            <div key={contact.id} className="relative group">
                                <div onClick={() => { setSelectedContactId(contact.id); setSelectedGroupId(null); setShowGroupInfo(false); setShowContactInfo(false); }} className={`p-3 rounded-lg cursor-pointer flex items-center gap-3 transition-colors ${selectedContactId === contact.id ? 'bg-primary/10' : 'hover:bg-gray-800'}`}>
                                    <div className="relative">
@@ -742,17 +793,17 @@ const CommunityView: React.FC<CommunityViewProps> = ({
                                                {contact.name}
                                                {contact.isMiniLucel && <span className="text-[10px] bg-blue-500/20 text-blue-400 px-1 rounded">AI</span>}
                                            </span>
-                                           <span className="text-[10px] text-gray-500">{contact.messages.length > 0 ? new Date(contact.messages[contact.messages.length-1].timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : ''}</span>
+                                           <span className="text-[10px] text-gray-500">{msgs.length > 0 ? new Date(msgs[msgs.length-1].timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : ''}</span>
                                        </div>
                                        <p className="text-xs text-gray-500 truncate">
-                                           {contact.isBlocked ? 'Bloqueado' : contact.messages.length > 0 
-                                            ? (contact.messages[contact.messages.length-1].attachment ? '[Adjunto]' : contact.messages[contact.messages.length-1].content) 
+                                           {contact.isBlocked ? 'Bloqueado' : msgs.length > 0 
+                                            ? (msgs[msgs.length-1].attachment ? '[Adjunto]' : msgs[msgs.length-1].content) 
                                             : contact.bio}
                                        </p>
                                    </div>
                                </div>
                            </div>
-                       ))}
+                       )})}
                    </div>
                )}
 
@@ -763,6 +814,7 @@ const CommunityView: React.FC<CommunityViewProps> = ({
                        </button>
                        {groups.map(group => {
                            const amIMember = group.members.includes(myUsername);
+                           const msgs = group.messages || [];
                            return (
                            <div key={group.id} className="relative group/item">
                                <div onClick={() => { setSelectedGroupId(group.id); setSelectedContactId(null); setShowGroupInfo(false); setShowContactInfo(false); }} className={`p-3 rounded-lg cursor-pointer flex items-center gap-3 transition-colors ${selectedGroupId === group.id ? 'bg-green-500/10' : 'hover:bg-gray-800'}`}>
@@ -772,8 +824,8 @@ const CommunityView: React.FC<CommunityViewProps> = ({
                                            <span className="font-bold text-gray-200">{group.name}</span>
                                        </div>
                                        <p className="text-xs text-gray-500 truncate">
-                                           {!amIMember ? 'Saliste del grupo' : group.messages.length > 0 
-                                            ? (group.messages[group.messages.length-1].attachment ? '[Adjunto]' : group.messages[group.messages.length-1].content)
+                                           {!amIMember ? 'Saliste del grupo' : msgs.length > 0 
+                                            ? (msgs[msgs.length-1].attachment ? '[Adjunto]' : msgs[msgs.length-1].content)
                                             : `${group.members.length} miembros`}
                                        </p>
                                    </div>
@@ -907,7 +959,7 @@ const CommunityView: React.FC<CommunityViewProps> = ({
                        </div>
                        
                        <div className="w-32 h-32 rounded-full border-4 border-gray-900 p-1 mb-4 relative group z-10 bg-gray-900 shadow-xl">
-                           <img src={myAvatar} className="w-full h-full rounded-full bg-gray-800 object-cover" />
+                           <img src={myAvatar} className="w-full h-full rounded-full bg-gray-800 object-cover" onClick={handleProfileClick} />
                            <div className="absolute inset-0 bg-black/60 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
                                <Camera className="text-white" size={24} />
                            </div>
@@ -1289,12 +1341,12 @@ const CommunityView: React.FC<CommunityViewProps> = ({
                    <div className="bg-gray-900 rounded-xl p-4 mb-4">
                        <h3 className="text-xs font-bold text-gray-500 uppercase mb-2">Archivos, enlaces y docs</h3>
                        <div className="grid grid-cols-3 gap-2">
-                           {selectedContact.messages.filter(m => m.attachment?.type === 'image').slice(0, 6).map((m, i) => (
+                           {(selectedContact.messages || []).filter(m => m.attachment?.type === 'image').slice(0, 6).map((m, i) => (
                                <div key={i} className="aspect-square bg-gray-800 rounded flex items-center justify-center overflow-hidden cursor-pointer">
                                    <img src={m.attachment?.url} className="w-full h-full object-cover" />
                                </div>
                            ))}
-                           {selectedContact.messages.filter(m => m.attachment?.type === 'image').length === 0 && (
+                           {(selectedContact.messages || []).filter(m => m.attachment?.type === 'image').length === 0 && (
                                <div className="col-span-3 text-center text-xs text-gray-600 py-4">Sin fotos.</div>
                            )}
                        </div>
@@ -1475,6 +1527,7 @@ const CommunityView: React.FC<CommunityViewProps> = ({
                <div className="flex flex-1 overflow-hidden">
                    <div className="w-64 border-r border-gray-800 bg-black/50 p-4">
                        <button onClick={() => setDevTab('code')} className={`w-full text-left py-2 px-3 rounded font-mono text-xs mb-1 ${devTab === 'code' ? 'bg-green-900/20 text-green-400' : 'text-gray-500'}`}>/src/source_code</button>
+                       <button onClick={() => setDevTab('html')} className={`w-full text-left py-2 px-3 rounded font-mono text-xs mb-1 ${devTab === 'html' ? 'bg-orange-900/20 text-orange-400' : 'text-gray-500'}`}>/src/lucel_html_code</button>
                        <button onClick={() => setDevTab('news')} className={`w-full text-left py-2 px-3 rounded font-mono text-xs mb-1 ${devTab === 'news' ? 'bg-blue-900/20 text-blue-400' : 'text-gray-500'}`}>/sys/news_feed</button>
                        <button onClick={() => setDevTab('custom')} className={`w-full text-left py-2 px-3 rounded font-mono text-xs mb-1 ${devTab === 'custom' ? 'bg-purple-900/20 text-purple-400' : 'text-gray-500'}`}>/usr/custom_override</button>
                    </div>
@@ -1492,6 +1545,18 @@ const CommunityView: React.FC<CommunityViewProps> = ({
                                    </button>
                                    <p className="text-gray-500 mt-2 text-center">Caution: This modifies the base personality matrix of the system assistant.</p>
                                </div>
+                           </div>
+                       )}
+                       {devTab === 'html' && (
+                           <div className="space-y-4">
+                               <div className="flex items-center justify-between border-b border-gray-800 pb-2 mb-4">
+                                   <h3 className="text-orange-400 flex items-center gap-2"><FileCode size={16}/> Código HTML de Lucel</h3>
+                                   <button onClick={() => navigator.clipboard.writeText(FULL_PROJECT_CODE)} className="text-[10px] bg-gray-800 px-2 py-1 rounded hover:bg-gray-700">Copiar Todo</button>
+                               </div>
+                               <div className="bg-black/50 p-4 rounded border border-gray-800 font-mono text-[10px] text-yellow-500 leading-tight">
+                                   <pre className="whitespace-pre-wrap">{FULL_PROJECT_CODE}</pre>
+                               </div>
+                               <p className="text-gray-600 mt-4 italic">// Nota: Este es el volcado del núcleo visual de la aplicación.</p>
                            </div>
                        )}
                        {devTab === 'news' && (

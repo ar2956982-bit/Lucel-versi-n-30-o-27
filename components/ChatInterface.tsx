@@ -1,8 +1,8 @@
+
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, ArrowLeft, MoreVertical, Search, Edit, Trash, Bookmark, Brain, History, Database, Star, X, Palette, Image as ImageIcon, Save, RefreshCw, Type, Square, MessageSquare, AlertTriangle, Eraser, RotateCcw, Copy, Pencil, Plus, Languages } from 'lucide-react';
+import { Send, ArrowLeft, MoreVertical, Trash, Copy, Eraser, RotateCcw, Pencil, Plus, Layout, X, ImageIcon, Palette, AlertTriangle, History, BookOpen, UserCheck, Bookmark, Bird, Edit3, Save } from 'lucide-react';
 import { Character, Message, UserPersona, ChatSession } from '../types';
-import { generateChatResponse, extractUserFacts, generateSummary } from '../services/geminiService';
-import { GoogleGenAI } from "@google/genai";
+import { generateChatResponse } from '../services/geminiService';
 import { marked } from 'marked';
 
 interface ChatInterfaceProps {
@@ -11,499 +11,348 @@ interface ChatInterfaceProps {
   session: ChatSession;
   onUpdateSession: (session: ChatSession | ((prev: ChatSession) => ChatSession)) => void;
   onBack: () => void;
+  onRavenClick: () => void;
   t: any;
   language: string;
 }
 
-const ChatInterface: React.FC<ChatInterfaceProps> = ({ character, userPersona, session, onUpdateSession, onBack, t, language }) => {
+const ChatInterface: React.FC<ChatInterfaceProps> = ({ character, userPersona, session, onUpdateSession, onBack, onRavenClick, t, language }) => {
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
-  const [rightSidebarTab, setRightSidebarTab] = useState<'memory' | 'history' | 'facts' | 'moments' | 'settings'>('memory');
+  const [rightSidebarTab, setRightSidebarTab] = useState<'memory' | 'facts' | 'history' | 'settings'>('memory');
   const [showRightSidebar, setShowRightSidebar] = useState(false); 
-  const [searchHistory, setSearchHistory] = useState('');
   const [activeMessageMenu, setActiveMessageMenu] = useState<string | null>(null);
   
-  // Translation State
-  const [autoTranslate, setAutoTranslate] = useState(false);
-  const [translatedMessages, setTranslatedMessages] = useState<Record<string, string>>({});
-
-  // Memory Block Editing State
+  // Edición de Bloques de Memoria
   const [editingBlockIndex, setEditingBlockIndex] = useState<number | null>(null);
   const [tempBlockContent, setTempBlockContent] = useState('');
 
-  // Fact Editing State
-  const [editingFactIndex, setEditingFactIndex] = useState<number | null>(null);
-  const [tempFactContent, setTempFactContent] = useState('');
+  // Edición de Mensajes (Feature Restaurada)
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editMessageContent, setEditMessageContent] = useState('');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [session.messages, isTyping, translatedMessages]);
-
-  // --- AUTO TRANSLATION LOGIC ---
-  useEffect(() => {
-      if (autoTranslate) {
-          session.messages.forEach(async (msg) => {
-              if (msg.role === 'model' && !translatedMessages[msg.id]) {
-                  try {
-                      // Simple Translation Call
-                      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-                      const response = await ai.models.generateContent({
-                          model: 'gemini-2.0-flash-exp',
-                          contents: `Translate this text to ${language}: "${msg.content}". Return ONLY the translation.`
-                      });
-                      if (response.text) {
-                          setTranslatedMessages(prev => ({...prev, [msg.id]: response.text || ''}));
-                      }
-                  } catch (e) { console.error("Translation fail", e); }
-              }
-          });
-      }
-  }, [session.messages, autoTranslate, language]);
-
-  useEffect(() => {
-    if (session.messages.length === 0) {
-      const initialMsg: Message = {
-        id: Date.now().toString(),
-        role: 'model',
-        content: character.firstMessage || `*${character.name} te observa.*`,
-        timestamp: Date.now()
-      };
-      onUpdateSession({ ...session, messages: [initialMsg] });
-    }
-  }, []);
+  }, [session.messages, isTyping]);
 
   const handleSend = async () => {
     if (!input.trim()) return;
-
-    const userMsg: Message = {
-      id: Date.now().toString(),
-      role: 'user',
-      content: input,
-      timestamp: Date.now()
-    };
-
+    
+    const userMsg: Message = { id: Date.now().toString(), role: 'user', content: input, timestamp: Date.now() };
     const newMessages = [...session.messages, userMsg];
     
-    onUpdateSession({
-      ...session,
-      messages: newMessages,
-      lastInteraction: Date.now()
-    });
+    // Actualización optimista
+    onUpdateSession((prev) => ({ 
+        ...prev, 
+        messages: newMessages, 
+        lastInteraction: Date.now() 
+    }));
+    
     setInput('');
     setIsTyping(true);
 
-    let retrievedContext = "";
-    if (newMessages.length > 25) {
-        const queryTerms = input.toLowerCase().split(' ').filter(w => w.length > 3);
-        const oldMessages = newMessages.slice(0, -20); 
-        const matchedMessages = oldMessages.filter(m => 
-            queryTerms.some(term => m.content.toLowerCase().includes(term))
-        ).slice(-5); 
-
-        if (matchedMessages.length > 0) {
-            retrievedContext = matchedMessages.map(m => `[Old Msg ${new Date(m.timestamp).toLocaleDateString()}] ${m.role}: ${m.content}`).join('\n');
-        }
-    }
-
+    // Llamada al Núcleo IA con Memoria Infinita
     const responseText = await generateChatResponse(
-      newMessages, 
-      input, 
-      character, 
-      userPersona, 
-      session.extractedUserFacts,
-      language,
-      retrievedContext,
-      session.memoryBlocks || (session.summary ? [session.summary] : []) // V26: Pass all blocks
+        newMessages, 
+        input, 
+        character, 
+        userPersona, 
+        session.extractedUserFacts || [], 
+        language, 
+        "", 
+        session.memoryBlocks || []
     );
-
-    const aiMsg: Message = {
-      id: (Date.now() + 1).toString(),
-      role: 'model',
-      content: responseText,
-      timestamp: Date.now()
-    };
     
-    extractUserFacts(input, session.extractedUserFacts).then(newFacts => {
-        if (newFacts.length !== session.extractedUserFacts.length) {
-            onUpdateSession((prev) => ({...prev, extractedUserFacts: newFacts}));
-        }
-    });
-
-    if (newMessages.length % 5 === 0) {
-        generateSummary(newMessages).then(summary => {
-             // V26: Update First Block OR Summary
-             onUpdateSession((prev) => {
-                 const newBlocks = [...(prev.memoryBlocks || [])];
-                 if (newBlocks.length === 0) newBlocks.push(summary);
-                 else newBlocks[0] = summary; // Always update the active (first) block
-                 return {...prev, summary, memoryBlocks: newBlocks};
-             });
-        });
+    // --- LÓGICA DE MEMORIA AUTÓNOMA (REGEX) ---
+    // Extrae y ejecuta comandos [MEMORY_ADD] y [FACT_ADD] generados por la IA
+    let cleanText = responseText;
+    const memoryRegex = /\[MEMORY_ADD:\s*([\s\S]*?)\]/g;
+    const factRegex = /\[FACT_ADD:\s*([\s\S]*?)\]/g;
+    
+    let match;
+    const autoMemories: string[] = [];
+    while ((match = memoryRegex.exec(responseText)) !== null) {
+        autoMemories.push(match[1].trim());
+        cleanText = cleanText.replace(match[0], ''); // Ocultar comando del chat visible
     }
 
-    onUpdateSession((prev) => ({
-      ...prev,
-      messages: [...prev.messages, aiMsg],
-      lastInteraction: Date.now()
+    const autoFacts: string[] = [];
+    while ((match = factRegex.exec(responseText)) !== null) {
+        autoFacts.push(match[1].trim());
+        cleanText = cleanText.replace(match[0], ''); // Ocultar comando del chat visible
+    }
+
+    cleanText = cleanText.trim();
+
+    const aiMsg: Message = { id: (Date.now() + 1).toString(), role: 'model', content: cleanText, timestamp: Date.now() };
+    
+    onUpdateSession((prev) => ({ 
+        ...prev, 
+        messages: [...prev.messages, aiMsg], 
+        lastInteraction: Date.now(),
+        // Agregamos automáticamente las memorias detectadas por la IA
+        memoryBlocks: [...(prev.memoryBlocks || []), ...autoMemories],
+        extractedUserFacts: [...(prev.extractedUserFacts || []), ...autoFacts]
     }));
+    
     setIsTyping(false);
   };
 
-  const saveMoment = (msg: Message) => {
-    const isAlreadySaved = session.savedMoments.find(m => m.id === msg.id);
-    if (!isAlreadySaved) {
-        onUpdateSession({
-            ...session,
-            savedMoments: [...session.savedMoments, { ...msg, isMemory: true }]
-        });
-    }
-    setActiveMessageMenu(null);
-  };
-
-  const saveToFacts = (msg: Message) => {
-      const cleanContent = msg.content.substring(0, 100); 
-      onUpdateSession({
-          ...session,
-          extractedUserFacts: [...session.extractedUserFacts, `[Manual] ${cleanContent}`]
-      });
-      alert(t.save_fact + ": OK"); 
-      setActiveMessageMenu(null);
-  };
-
-  const copyMessage = (text: string) => {
-      navigator.clipboard.writeText(text);
-      setActiveMessageMenu(null);
-  };
-  
-  const deleteMessage = (msgId: string) => {
-      onUpdateSession({
-          ...session,
-          messages: session.messages.filter(m => m.id !== msgId)
-      });
-      setActiveMessageMenu(null);
-  };
-
-  const editMessage = (msgId: string, newContent: string) => {
-      onUpdateSession({
-          ...session,
-          messages: session.messages.map(m => m.id === msgId ? { ...m, content: newContent } : m)
-      });
-      setActiveMessageMenu(null);
-  };
-
-  // --- MEMORY BLOCK MANAGEMENT V26 ---
-  const handleEditBlock = (index: number) => {
-      setTempBlockContent(session.memoryBlocks?.[index] || '');
-      setEditingBlockIndex(index);
-  };
-
-  const handleSaveBlock = () => {
-      if (editingBlockIndex === null) return;
-      onUpdateSession(prev => {
-          const newBlocks = [...(prev.memoryBlocks || [])];
-          newBlocks[editingBlockIndex] = tempBlockContent;
-          return { ...prev, memoryBlocks: newBlocks };
-      });
-      setEditingBlockIndex(null);
-  };
-
-  const handleDeleteBlock = (index: number) => {
-      if (confirm("¿Borrar este bloque de memoria?")) {
-          onUpdateSession(prev => {
-              const newBlocks = prev.memoryBlocks?.filter((_, i) => i !== index) || [];
-              return { ...prev, memoryBlocks: newBlocks };
-          });
-      }
-  };
-
-  const handleAddBlock = () => {
-      onUpdateSession(prev => ({
-          ...prev,
-          memoryBlocks: [...(prev.memoryBlocks || []), "Nuevo bloque de memoria..."]
-      }));
-  };
-
-  // Fact Management
-  const handleEditFact = (index: number) => {
-      setTempFactContent(session.extractedUserFacts[index]);
-      setEditingFactIndex(index);
-  };
-
-  const handleSaveFact = (index: number) => {
-      const updatedFacts = [...session.extractedUserFacts];
-      updatedFacts[index] = tempFactContent;
-      onUpdateSession(prev => ({ ...prev, extractedUserFacts: updatedFacts }));
-      setEditingFactIndex(null);
-  };
-
-  const handleDeleteFact = (index: number) => {
-      if(confirm("¿Borrar este recuerdo permanentemente?")) {
-          const updatedFacts = session.extractedUserFacts.filter((_, i) => i !== index);
-          onUpdateSession(prev => ({ ...prev, extractedUserFacts: updatedFacts }));
-      }
-  };
-
-  const handleThemeChange = (field: keyof import('../types').ChatTheme, value: any) => {
-      onUpdateSession(prev => {
-          const currentTheme = prev.theme || {};
-          return {
-              ...prev,
-              theme: { ...currentTheme, [field]: value }
-          };
-      });
-  };
-
-  const handleClearChat = () => {
-      if(confirm("¿Estás seguro de que quieres borrar TODO el historial de este chat? No se puede deshacer.")) {
-          onUpdateSession(prev => {
-              return {
-                  ...prev,
-                  messages: [], 
-                  summary: '',
-              };
-          });
-      }
-  };
-
-  const handleRestoreChat = () => {
-      const initialMsg: Message = {
-        id: Date.now().toString(),
-        role: 'model',
-        content: character.firstMessage || `*${character.name} te observa.*`,
-        timestamp: Date.now()
-      };
-      onUpdateSession(prev => ({ ...prev, messages: [initialMsg] }));
-  };
-
-  const handleDeleteLast = () => {
-      onUpdateSession(prev => ({ ...prev, messages: prev.messages.slice(0, -1) }));
+  const handleThemeChange = (field: string, value: any) => {
+    onUpdateSession(prev => ({
+        ...prev,
+        theme: { ...(prev.theme || {}), [field]: value }
+    }));
   };
 
   const handleBgUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (file) {
-          const reader = new FileReader();
-          reader.onloadend = () => {
-              handleThemeChange('backgroundImage', reader.result as string);
-          };
-          reader.readAsDataURL(file);
-      }
+    const file = e.target.files?.[0];
+    if (file) {
+        const reader = new FileReader();
+        reader.onloadend = () => handleThemeChange('backgroundImage', reader.result as string);
+        reader.readAsDataURL(file);
+    }
   };
 
-  const renderMarkdown = (text: string) => {
-    return { __html: marked.parse(text) };
+  // Funciones del Menú de Mensajes
+  const saveToFacts = (text: string) => {
+      onUpdateSession(p => ({...p, extractedUserFacts: [...(p.extractedUserFacts || []), text]}));
+      setActiveMessageMenu(null);
   };
 
-  const bubbleShapeClass = session.theme?.bubbleShape === 'square' ? 'rounded-none' : session.theme?.bubbleShape === 'message' ? '' : 'rounded-2xl';
+  const saveToMemory = (text: string) => {
+      onUpdateSession(p => ({...p, memoryBlocks: [...(p.memoryBlocks || []), text]}));
+      setActiveMessageMenu(null);
+  };
+
+  const handleEditMessage = (msgId: string, newContent: string) => {
+      onUpdateSession(prev => ({
+          ...prev,
+          messages: prev.messages.map(m => m.id === msgId ? { ...m, content: newContent } : m)
+      }));
+      setEditingMessageId(null);
+  };
+
+  const handleDeleteMessage = (msgId: string) => {
+      onUpdateSession(prev => ({
+          ...prev,
+          messages: prev.messages.filter(m => m.id !== msgId)
+      }));
+      setActiveMessageMenu(null);
+  };
+
+  const renderMarkdown = (text: string) => { return { __html: marked.parse(text) }; };
   const chatFontSize = session.theme?.fontSize === 'small' ? 'text-xs' : session.theme?.fontSize === 'large' ? 'text-base' : 'text-sm';
-  const borderClass = session.theme?.bubbleBorder ? 'border border-white/20' : 'border-none';
 
   return (
-    <div 
-        className="flex h-[calc(100vh-6rem)] lg:h-screen w-full bg-gray-900 relative" 
-        onClick={() => setActiveMessageMenu(null)}
-        style={{
-            backgroundImage: session.theme?.backgroundImage ? `url(${session.theme.backgroundImage})` : undefined,
-            backgroundSize: 'cover',
-            backgroundPosition: 'center',
-        }}
-    >
-      {session.theme?.backgroundImage && <div className="absolute inset-0 bg-black/60 z-0" style={{ opacity: session.theme.backgroundOpacity ?? 0.6 }}></div>}
+    <div className="flex h-full w-full bg-[#0f172a] relative overflow-hidden" 
+        style={{ backgroundImage: session.theme?.backgroundImage ? `url(${session.theme.backgroundImage})` : undefined, backgroundSize: 'cover', backgroundPosition: 'center' }}>
+      
+      {session.theme?.backgroundImage && <div className="absolute inset-0 bg-black/70 z-0 backdrop-blur-[2px]"></div>}
 
       <div className="flex-1 flex flex-col relative h-full z-10">
-        <div className="h-16 border-b border-gray-800 bg-gray-900/90 backdrop-blur flex items-center justify-between px-4 z-10">
+        {/* Topbar */}
+        <div className="h-16 border-b border-gray-800 bg-gray-900/95 backdrop-blur-md flex items-center justify-between px-4 z-20 shrink-0 shadow-xl">
           <div className="flex items-center gap-3">
-            <button onClick={onBack} className="lg:hidden text-gray-400"><ArrowLeft /></button>
-            <img src={character.avatar} className="w-10 h-10 rounded-full object-cover border border-primary" />
+            <button onClick={onBack} className="text-gray-400 p-1 hover:text-primary transition-colors"><ArrowLeft size={24} /></button>
+            <img src={character.avatar} className="w-10 h-10 rounded-full object-cover border border-primary shadow-[0_0_15px_rgba(var(--primary),0.4)]" />
             <div>
-              <h3 className="font-bold text-white font-brand">{character.name}</h3>
-              <p className="text-xs text-primary flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span> {t.online || "Online"}
-              </p>
+              <h3 className="font-bold text-white font-brand text-sm md:text-base truncate uppercase tracking-tighter flex items-center gap-2">
+                  {character.name}
+                  <span className="text-[9px] bg-primary/20 text-primary px-1.5 rounded border border-primary/30">V26</span>
+              </h3>
+              <p className="text-[9px] text-green-400 font-black animate-pulse uppercase tracking-widest flex items-center gap-1">● MEMORIA INFINITA</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-              <button 
-                onClick={() => setAutoTranslate(!autoTranslate)}
-                className={`p-2 rounded-lg transition-colors ${autoTranslate ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'}`}
-                title="Auto-Translate Chat"
-              >
-                  <Languages size={20} />
-              </button>
-              <button 
-                onClick={(e) => { e.stopPropagation(); setShowRightSidebar(!showRightSidebar); }} 
-                className={`p-2 rounded-lg transition-colors ${showRightSidebar ? 'bg-primary text-black' : 'text-gray-400 hover:text-white'}`}
-              >
-                <Brain size={20} />
-              </button>
-          </div>
+          <button onClick={() => setShowRightSidebar(true)} className="p-2 rounded-lg text-primary bg-primary/10 hover:bg-primary/20 transition-all shadow-lg border border-primary/20"><Layout size={20}/></button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {session.messages.length === 0 && (
-             <div className="flex flex-col items-center justify-center h-full text-gray-500">
-                 <Eraser size={40} className="mb-2 opacity-20"/>
-                 <p className="text-sm">Chat vaciado.</p>
-                 <button onClick={handleRestoreChat} className="mt-4 text-primary text-xs hover:underline flex items-center gap-1"><RotateCcw size={12}/> {t.restoreStart || "Restaurar"}</button>
-             </div>
-          )}
-          {session.messages.map(msg => (
-            <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} group relative`}>
-              
-              <button 
-                onClick={(e) => { e.stopPropagation(); setActiveMessageMenu(activeMessageMenu === msg.id ? null : msg.id); }}
-                className={`absolute top-2 ${msg.role === 'user' ? 'left-0 -ml-8' : 'right-0 -mr-8'} p-1.5 text-gray-500 hover:text-white rounded-full transition-colors opacity-0 group-hover:opacity-100 ${activeMessageMenu === msg.id ? 'opacity-100 bg-gray-800' : ''}`}
-              >
-                <MoreVertical size={16} />
-              </button>
-
-              {activeMessageMenu === msg.id && (
-                  <div className={`absolute top-8 ${msg.role === 'user' ? 'left-0' : 'right-0'} w-44 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-50 overflow-hidden`}>
-                      <button onClick={() => saveToFacts(msg)} className="w-full text-left px-4 py-3 text-xs hover:bg-white/5 flex items-center gap-2 text-purple-300">
-                          <Database size={14} /> {t.save_fact || "Guardar Hecho"}
-                      </button>
-                      <button onClick={() => copyMessage(msg.content)} className="w-full text-left px-4 py-3 text-xs hover:bg-white/5 flex items-center gap-2 text-gray-300 border-t border-gray-800">
-                          <Copy size={14} /> {t.copy || "Copiar"}
-                      </button>
-                      <button onClick={() => {
-                          const newContent = prompt("Editar mensaje:", msg.content);
-                          if (newContent) editMessage(msg.id, newContent);
-                      }} className="w-full text-left px-4 py-3 text-xs hover:bg-white/5 flex items-center gap-2 text-gray-300 border-t border-gray-800">
-                          <Edit size={14} /> {t.edit_msg || "Editar"}
-                      </button>
-                      <button onClick={() => saveMoment(msg)} className="w-full text-left px-4 py-3 text-xs hover:bg-white/5 flex items-center gap-2 text-primary border-t border-gray-800">
-                          <Bookmark size={14} /> Guardar Momento
-                      </button>
-                      <button onClick={() => deleteMessage(msg.id)} className="w-full text-left px-4 py-3 text-xs hover:bg-red-500/20 flex items-center gap-2 text-red-400 border-t border-gray-800">
-                          <Trash size={14} /> {t.delete}
-                      </button>
-                  </div>
-              )}
-
+        {/* Messages Area */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar pb-32" onClick={() => setActiveMessageMenu(null)}>
+          {session.messages.map((msg) => (
+            <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in group relative`}>
               <div 
-                className={`max-w-[85%] lg:max-w-[70%] p-4 ${chatFontSize} leading-relaxed shadow-lg ${bubbleShapeClass} ${borderClass}
-                  ${msg.role === 'user' 
-                    ? 'msg-user text-white' 
-                    : 'msg-ai text-gray-100'
-                  }
-                  ${session.theme?.bubbleShape === 'message' 
-                    ? (msg.role === 'user' ? 'rounded-2xl rounded-tr-sm' : 'rounded-2xl rounded-tl-sm') 
-                    : ''
-                  }
-                `}
-                style={{
-                    backgroundColor: msg.role === 'user' ? (session.theme?.userBubbleColor || '#f59e0b') : (session.theme?.aiBubbleColor || '#1f293b'),
-                    opacity: session.theme?.opacity || 1
-                }}
+                className={`max-w-[85%] md:max-w-[70%] px-5 py-3 rounded-2xl shadow-2xl relative ${chatFontSize} leading-relaxed transition-all border border-white/5 ${msg.role === 'user' ? 'text-white rounded-tr-none' : 'bg-[#1e293b]/95 text-gray-100 rounded-tl-none'}`}
+                style={{ backgroundColor: msg.role === 'user' ? (session.theme?.userBubbleColor || '#f59e0b') : (session.theme?.aiBubbleColor || undefined), color: msg.role === 'user' ? (session.theme?.userBubbleColor === '#ffffff' ? 'black' : 'white') : undefined }}
               >
-                {msg.role === 'model' 
-                   ? <div dangerouslySetInnerHTML={renderMarkdown(translatedMessages[msg.id] || msg.content)} className="prose prose-invert prose-sm" /> 
-                   : msg.content
-                }
-                {translatedMessages[msg.id] && <div className="text-[9px] text-blue-300 mt-1 flex items-center gap-1"><Languages size={10}/> Translated</div>}
+                {editingMessageId === msg.id ? (
+                    <div className="flex flex-col gap-2 min-w-[250px]">
+                        <textarea 
+                            value={editMessageContent} 
+                            onChange={e => setEditMessageContent(e.target.value)} 
+                            className="bg-black/50 text-white p-2 rounded text-sm w-full outline-none border border-primary/50"
+                            rows={3}
+                        />
+                        <div className="flex justify-end gap-2">
+                            <button onClick={() => setEditingMessageId(null)} className="text-xs text-red-400 font-bold hover:underline">Cancelar</button>
+                            <button onClick={() => handleEditMessage(msg.id, editMessageContent)} className="text-xs text-green-400 font-bold hover:underline">Guardar</button>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="prose prose-invert max-w-none prose-sm selection:bg-primary/30 selection:text-white" dangerouslySetInnerHTML={renderMarkdown(msg.content)} />
+                )}
                 
-                {session.theme?.showTimestamps !== false && (
-                    <div className="text-[9px] opacity-50 text-right mt-1">{new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
+                {/* 3 DOTS MENU TRIGGER */}
+                <button 
+                  onClick={(e) => { e.stopPropagation(); setActiveMessageMenu(activeMessageMenu === msg.id ? null : msg.id); }}
+                  className="absolute -right-8 top-1 bg-black/50 rounded-full p-1.5 text-gray-400 hover:text-primary opacity-0 group-hover:opacity-100 transition-all z-20"
+                >
+                  <MoreVertical size={14}/>
+                </button>
+
+                {/* MESSAGE CONTEXT MENU (FULL FEATURES) */}
+                {activeMessageMenu === msg.id && (
+                    <div className="absolute top-8 right-0 w-56 bg-[#020617] border border-gray-700 rounded-xl shadow-[0_0_40px_rgba(0,0,0,0.6)] z-[60] overflow-hidden animate-fade-in text-[10px] font-black uppercase">
+                        <button onClick={() => { navigator.clipboard.writeText(msg.content); setActiveMessageMenu(null); }} className="w-full text-left px-4 py-3 hover:bg-white/10 text-white flex items-center gap-3 transition-colors"><Copy size={14}/> Copiar Texto</button>
+                        <button onClick={() => { setEditingMessageId(msg.id); setEditMessageContent(msg.content); setActiveMessageMenu(null); }} className="w-full text-left px-4 py-3 hover:bg-white/10 text-blue-400 flex items-center gap-3 transition-colors border-t border-gray-800"><Edit3 size={14}/> Editar Mensaje</button>
+                        <button onClick={() => saveToFacts(msg.content)} className="w-full text-left px-4 py-3 hover:bg-purple-900/30 text-purple-400 flex items-center gap-3 border-t border-gray-800 transition-colors"><UserCheck size={14}/> Guardar Hecho</button>
+                        <button onClick={() => saveToMemory(msg.content)} className="w-full text-left px-4 py-3 hover:bg-primary/20 text-primary flex items-center gap-3 border-t border-gray-800 transition-colors"><Bookmark size={14}/> Forzar Memoria</button>
+                        <button onClick={() => handleDeleteMessage(msg.id)} className="w-full text-left px-4 py-3 hover:bg-red-900/30 text-red-500 flex items-center gap-3 border-t border-gray-800 transition-colors"><Trash size={14}/> Borrar Definitivamente</button>
+                    </div>
                 )}
               </div>
             </div>
           ))}
           {isTyping && (
-             <div className="flex justify-start">
-               <div className="msg-ai px-4 py-3 flex items-center gap-1" style={{ backgroundColor: session.theme?.aiBubbleColor || '#1f293b' }}>
-                 <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{animationDelay: '0ms'}}></div>
-                 <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{animationDelay: '150ms'}}></div>
-                 <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{animationDelay: '300ms'}}></div>
-               </div>
-             </div>
+             <div className="flex justify-start"><div className="bg-[#1e293b] rounded-2xl px-4 py-3 flex gap-1.5 shadow-lg border border-white/5"><div className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce"></div><div className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce [animation-delay:0.2s]"></div><div className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce [animation-delay:0.4s]"></div></div></div>
           )}
           <div ref={messagesEndRef} />
         </div>
 
-        <div className="p-4 bg-gray-900/80 backdrop-blur border-t border-gray-800">
-          <div className="flex items-center gap-2 bg-gray-800 rounded-2xl p-2 border border-gray-700 focus-within:border-primary transition-colors">
+        {/* Input Area */}
+        <div className="fixed bottom-0 left-0 right-0 p-4 bg-[#0f172a]/95 backdrop-blur-lg border-t border-gray-800 z-30 lg:relative lg:bg-transparent">
+          <div className="flex gap-2 bg-[#1e293b] p-2 rounded-2xl border border-gray-700 max-w-5xl mx-auto shadow-2xl relative group focus-within:border-primary transition-colors">
             <input 
-              type="text" 
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-              placeholder={t.typeMsg || "Escribe..."}
-              className="flex-1 bg-transparent border-none outline-none text-white px-3 h-10"
+                value={input} 
+                onChange={(e) => setInput(e.target.value)} 
+                onKeyDown={(e) => e.key === 'Enter' && handleSend()} 
+                placeholder="Escribir al núcleo..." 
+                className="flex-1 bg-transparent border-none outline-none p-3 text-white text-base md:text-sm font-medium placeholder-gray-500" 
             />
-            <button 
-              onClick={handleSend}
-              className="p-2.5 bg-primary text-black rounded-xl hover:bg-yellow-500 transition-transform active:scale-95"
-            >
-              <Send size={18} />
+            <button onClick={handleSend} className="bg-primary text-black p-4 rounded-xl active:scale-90 transition-all shadow-lg shadow-primary/20 hover:bg-yellow-400 group">
+                <Send size={20} className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform"/>
             </button>
           </div>
         </div>
       </div>
 
-      {showRightSidebar && (
-        <div 
-            onClick={(e) => e.stopPropagation()}
-            className="w-80 bg-black/90 backdrop-blur-md border-l border-gray-800 h-full flex flex-col absolute right-0 top-0 bottom-0 z-30 lg:relative animate-fade-in shadow-2xl"
-        >
-           {/* ... (Sidebar content kept same as previous) ... */}
-           {/* RE-INSERTING SIDEBAR CONTENT TO ENSURE INTEGRITY */}
-           <div className="p-4 border-b border-gray-800 flex items-center justify-between bg-gray-900/80">
-               <span className="text-xs font-bold text-primary uppercase tracking-widest">{t.memory}</span>
-               <button onClick={() => setShowRightSidebar(false)} className="lg:hidden text-white"><X size={16} /></button>
-           </div>
-           
-           <div className="flex border-b border-gray-800">
-               <button onClick={() => setRightSidebarTab('memory')} className={`flex-1 py-3 flex justify-center border-b-2 transition-colors ${rightSidebarTab === 'memory' ? 'text-primary border-primary' : 'text-gray-500 border-transparent hover:text-gray-300'}`}><Brain size={18} /></button>
-               <button onClick={() => setRightSidebarTab('history')} className={`flex-1 py-3 flex justify-center border-b-2 transition-colors ${rightSidebarTab === 'history' ? 'text-primary border-primary' : 'text-gray-500 border-transparent hover:text-gray-300'}`}><History size={18} /></button>
-               <button onClick={() => setRightSidebarTab('facts')} className={`flex-1 py-3 flex justify-center border-b-2 transition-colors ${rightSidebarTab === 'facts' ? 'text-primary border-primary' : 'text-gray-500 border-transparent hover:text-gray-300'}`}><Database size={18} /></button>
-               <button onClick={() => setRightSidebarTab('settings')} className={`flex-1 py-3 flex justify-center border-b-2 transition-colors ${rightSidebarTab === 'settings' ? 'text-primary border-primary' : 'text-gray-500 border-transparent hover:text-gray-300'}`}><Palette size={18} /></button>
-           </div>
+      {/* Sidebar Derecha (Memoria y Ajustes) */}
+      <div className={`fixed inset-0 bg-gray-950/98 backdrop-blur-xl z-[100] flex flex-col transition-all duration-500 ${showRightSidebar ? 'translate-x-0' : 'translate-x-full'} md:relative md:inset-auto md:w-96 md:translate-x-0 ${showRightSidebar ? '' : 'md:hidden'} border-l border-gray-800 shadow-2xl`}>
+          <div className="h-16 flex items-center justify-between p-4 border-b border-gray-800 bg-black/40 shrink-0">
+              <div className="flex items-center gap-2 cursor-pointer group" onClick={onRavenClick}>
+                <Bird size={20} className="text-primary group-hover:scale-110 transition-transform animate-pulse" />
+                <span className="text-[10px] font-black text-white uppercase tracking-widest">NÚCLEO DE MEMORIA V26</span>
+              </div>
+              <button onClick={() => setShowRightSidebar(false)} className="text-gray-400 p-2 bg-gray-800 rounded-full hover:bg-red-900/40 hover:text-white transition-all"><X size={24}/></button>
+          </div>
+          
+          {/* Tabs */}
+          <div className="flex bg-black/40 border-b border-gray-800 shrink-0">
+            {[
+              {id: 'memory', icon: <BookOpen size={14}/>, label: 'MEMORIA'},
+              {id: 'facts', icon: <UserCheck size={14}/>, label: 'HECHOS'},
+              {id: 'history', icon: <History size={14}/>, label: 'HISTORIAL'},
+              {id: 'settings', icon: <Palette size={14}/>, label: 'ESTÉTICA'}
+            ].map(tab => (
+               <button key={tab.id} onClick={() => setRightSidebarTab(tab.id as any)} className={`flex-1 py-4 flex flex-col items-center gap-1 text-[8px] font-black uppercase transition-all ${rightSidebarTab === tab.id ? 'text-primary border-b-2 border-primary bg-primary/5' : 'text-gray-600 hover:text-gray-300'}`}>
+                 {tab.icon} {tab.label}
+               </button>
+            ))}
+          </div>
 
-           <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
-               {rightSidebarTab === 'memory' && (
-                   <div className="space-y-4 animate-fade-in">
-                       <div className="flex justify-between items-center mb-2">
-                           <h4 className="text-sm font-bold text-white flex items-center gap-2"><Brain size={14}/> Bloques de Memoria</h4>
-                           <button onClick={handleAddBlock} className="text-green-400 hover:text-green-300 text-xs font-bold flex items-center gap-1">
-                               <Plus size={12}/> ADD
-                           </button>
-                       </div>
-
-                       {(session.memoryBlocks && session.memoryBlocks.length > 0 ? session.memoryBlocks : [session.summary || '']).map((block, index) => (
-                           <div key={index} className="bg-gray-800 rounded-lg p-3 border border-gray-700 relative group">
-                               {index === 0 && <span className="absolute -top-2 left-2 text-[8px] bg-primary text-black px-2 rounded font-bold uppercase">Active Context</span>}
-                               
+          <div className="flex-1 overflow-y-auto p-5 space-y-6 custom-scrollbar pb-32 bg-[#050505]">
+              {rightSidebarTab === 'memory' && (
+                  <div className="space-y-4 animate-fade-in">
+                      <div className="flex items-center justify-between">
+                          <h4 className="text-[10px] font-black text-primary uppercase tracking-widest">Bloques Contextuales (IA)</h4>
+                          <button onClick={() => onUpdateSession(p => ({...p, memoryBlocks: [...(p.memoryBlocks||[]), "Nuevo recuerdo..."]}))} className="p-1.5 bg-primary/10 text-primary rounded-lg hover:bg-primary/20 transition-all border border-primary/20"><Plus size={16}/></button>
+                      </div>
+                      <p className="text-[9px] text-gray-500 mb-2">Recuerdos generados automáticamente por la IA o añadidos manualmente.</p>
+                      
+                      {(session.memoryBlocks || []).map((block, index) => (
+                          <div key={index} className="bg-[#1e293b] p-4 rounded-xl border border-gray-800 text-[11px] text-gray-300 italic group relative shadow-inner hover:border-primary/30 transition-colors">
                                {editingBlockIndex === index ? (
-                                   <div className="space-y-2 mt-2">
-                                       <textarea 
-                                            value={tempBlockContent}
-                                            onChange={(e) => setTempBlockContent(e.target.value)}
-                                            className="w-full bg-black/50 p-2 rounded text-xs text-white border border-primary outline-none h-32"
-                                       />
-                                       <div className="flex gap-2 justify-end">
-                                           <button onClick={() => setEditingBlockIndex(null)} className="text-red-400 text-xs">Cancelar</button>
-                                           <button onClick={handleSaveBlock} className="text-green-400 text-xs font-bold">Guardar</button>
-                                       </div>
+                                   <div className="space-y-3">
+                                       <textarea value={tempBlockContent} onChange={e=>setTempBlockContent(e.target.value)} className="w-full bg-black p-3 rounded-lg text-xs text-white border border-primary/30 outline-none" rows={4}/>
+                                       <div className="flex gap-2"><button onClick={() => { onUpdateSession(p=>{const n=[...p.memoryBlocks]; n[index]=tempBlockContent; return {...p, memoryBlocks:n};}); setEditingBlockIndex(null); }} className="flex-1 bg-green-600 py-2 rounded-lg text-[9px] font-black uppercase hover:bg-green-500 text-black transition-colors">Guardar</button><button onClick={()=>setEditingBlockIndex(null)} className="flex-1 bg-gray-700 py-2 rounded-lg text-[9px] font-black uppercase hover:bg-gray-600 transition-colors">Cancelar</button></div>
                                    </div>
                                ) : (
                                    <>
-                                     <p className="text-xs text-gray-300 italic mt-1 whitespace-pre-wrap">{block || "..."}</p>
-                                     <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-gray-800/80 rounded">
-                                         <button onClick={() => handleEditBlock(index)} className="p-1 text-blue-400 hover:text-white"><Edit size={12}/></button>
-                                         <button onClick={() => handleDeleteBlock(index)} className="p-1 text-red-400 hover:text-white"><Trash size={12}/></button>
-                                     </div>
+                                       <p className="line-clamp-6">{block}</p>
+                                       <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black/50 rounded-lg p-1">
+                                           <button onClick={() => {setEditingBlockIndex(index); setTempBlockContent(block);}} className="text-blue-400 hover:text-white p-1"><Pencil size={12}/></button>
+                                           <button onClick={() => onUpdateSession(p => ({...p, memoryBlocks: p.memoryBlocks.filter((_,i)=>i!==index)}))} className="text-red-500 hover:text-white p-1"><Trash size={12}/></button>
+                                       </div>
                                    </>
                                )}
-                           </div>
-                       ))}
-                   </div>
-               )}
-               {/* Facts, History, Moments, Settings tabs assumed correctly implemented from previous versions */}
-           </div>
-        </div>
-      )}
+                          </div>
+                      ))}
+                      {(!session.memoryBlocks || session.memoryBlocks.length === 0) && <p className="text-center text-[10px] text-gray-600 mt-10 uppercase font-bold tracking-widest border border-dashed border-gray-800 p-4 rounded-xl">Sin memorias registradas aún.</p>}
+                  </div>
+              )}
+
+              {rightSidebarTab === 'facts' && (
+                  <div className="space-y-4 animate-fade-in">
+                      <h4 className="text-[10px] font-black text-purple-400 uppercase tracking-widest">Hechos del Usuario</h4>
+                      <div className="space-y-2">
+                        {(session.extractedUserFacts || []).map((fact, i) => (
+                            <div key={i} className="bg-purple-900/10 border border-purple-500/20 p-3 rounded-xl text-[10px] text-gray-300 flex justify-between items-center group shadow-md hover:border-purple-500/50 transition-colors">
+                                <span className="flex-1 pr-4 font-mono">{fact}</span>
+                                <button onClick={() => onUpdateSession(p => ({...p, extractedUserFacts: p.extractedUserFacts.filter((_,j)=>j!==i)}))} className="opacity-0 group-hover:opacity-100 transition-opacity text-red-500 hover:text-white p-1 bg-black/50 rounded"><Trash size={12}/></button>
+                            </div>
+                        ))}
+                      </div>
+                  </div>
+              )}
+
+              {rightSidebarTab === 'history' && (
+                  <div className="space-y-4 animate-fade-in">
+                      <h4 className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Registro Completo</h4>
+                      <div className="space-y-3">
+                        {session.messages.length === 0 && <p className="text-[10px] text-gray-600 italic">No hay historial disponible.</p>}
+                        {session.messages.map((m, i) => (
+                            <div key={i} className={`text-[10px] p-3 rounded-lg border ${m.role === 'user' ? 'bg-primary/5 border-primary/20 text-gray-300' : 'bg-gray-900 border-gray-800 text-gray-400'}`}>
+                                <span className={`block font-bold uppercase mb-1 ${m.role === 'user' ? 'text-primary' : 'text-gray-500'}`}>{m.role === 'user' ? userPersona.name : character.name}</span>
+                                <p className="line-clamp-4 hover:line-clamp-none cursor-pointer transition-all">{m.content}</p>
+                                <span className="text-[8px] text-gray-600 mt-2 block">{new Date(m.timestamp).toLocaleString()}</span>
+                            </div>
+                        ))}
+                      </div>
+                  </div>
+              )}
+
+              {rightSidebarTab === 'settings' && (
+                  <div className="space-y-6 animate-fade-in">
+                      <div className="space-y-5">
+                          <h4 className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Estética Individual</h4>
+                          
+                          <div className="space-y-2">
+                              <label className="text-[9px] text-gray-600 uppercase font-black">Fondo del Chat</label>
+                              <label className="w-full h-24 border-2 border-dashed border-gray-800 rounded-2xl flex flex-col items-center justify-center cursor-pointer hover:border-primary transition-all overflow-hidden relative shadow-inner group bg-gray-900/50">
+                                  {session.theme?.backgroundImage ? <img src={session.theme.backgroundImage} className="absolute inset-0 w-full h-full object-cover opacity-50 group-hover:scale-110 transition-transform"/> : <ImageIcon size={24} className="text-gray-700"/>}
+                                  <span className="text-[10px] text-gray-500 mt-1 z-10 font-bold uppercase">Subir Imagen HD</span>
+                                  <input type="file" accept="image/*" onChange={handleBgUpload} className="hidden" />
+                              </label>
+                              {session.theme?.backgroundImage && <button onClick={() => handleThemeChange('backgroundImage', null)} className="text-[9px] text-red-500 w-full text-center font-black uppercase hover:text-red-400 transition-colors">Eliminar Imagen</button>}
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-4">
+                              <div className="space-y-2">
+                                  <label className="text-[9px] text-gray-600 uppercase font-black">Burbuja Tú</label>
+                                  <input type="color" value={session.theme?.userBubbleColor || '#f59e0b'} onChange={e => handleThemeChange('userBubbleColor', e.target.value)} className="w-full h-10 rounded-xl bg-gray-900 border-none cursor-pointer shadow-lg" />
+                              </div>
+                              <div className="space-y-2">
+                                  <label className="text-[9px] text-gray-600 uppercase font-black">Burbuja IA</label>
+                                  <input type="color" value={session.theme?.aiBubbleColor || '#1e293b'} onChange={e => handleThemeChange('aiBubbleColor', e.target.value)} className="w-full h-10 rounded-xl bg-gray-900 border-none cursor-pointer shadow-lg" />
+                              </div>
+                          </div>
+                      </div>
+                  </div>
+              )}
+          </div>
+      </div>
     </div>
   );
 };

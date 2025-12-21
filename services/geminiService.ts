@@ -1,15 +1,14 @@
+
 import { GoogleGenAI } from "@google/genai";
 import { Message, UserPersona, Character, CommunityContact } from "../types";
 
 const getClient = () => new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-// Helper to filter empty fields and format them to save tokens
 const formatField = (label: string, value: string | undefined | null): string => {
     if (!value || value.trim().length < 2 || value.trim() === 'Unknown') return '';
     return `- **${label}:** ${value.trim()}\n`;
 };
 
-// CHAT PRINCIPAL CON PERSONAJES
 export const generateChatResponse = async (
   history: Message[],
   lastMessage: string,
@@ -22,128 +21,134 @@ export const generateChatResponse = async (
 ): Promise<string> => {
   const ai = getClient();
   
-  // 1. Prepare Archives context
-  const userArchives = userPersona.customArchives && userPersona.customArchives.length > 0
-    ? userPersona.customArchives.map(a => `[FILE: ${a.title}] ${a.content}`).join('\n')
-    : '';
-    
-  const characterArchives = character.customArchives && character.customArchives.length > 0
-    ? character.customArchives.map(a => `[LORE: ${a.title}] ${a.content}`).join('\n')
-    : '';
-
-  // Prepare Memory Blocks
+  // 1. INYECCIÓN DE ARCHIVOS (EXPEDIENTES Y MEMORIAS EXTERNAS)
+  // Ahora la IA tiene acceso directo a los archivos creados en las pestañas 'ARCHIVOS'.
+  const userArchives = userPersona.customArchives?.map(a => `[FUENTE_INFORMACIÓN_USUARIO: "${a.title}"]\n${a.content}`).join('\n\n') || '';
+  const characterArchives = character.customArchives?.map(a => `[FUENTE_INFORMACIÓN_PERSONAJE: "${a.title}"]\n${a.content}`).join('\n\n') || '';
+  
+  // 2. CONSTRUCCIÓN DE MEMORIA A LARGO PLAZO (BLOQUES)
   const fullMemory = memoryBlocks && memoryBlocks.length > 0 
-    ? memoryBlocks.join('\n\n') 
+    ? `### MEMORIA EPISÓDICA (HECHOS CLAVE ACUMULADOS) ###\n${memoryBlocks.join('\n\n')}\n`
     : '';
 
-  // 2. Data Construction
+  // 3. PERFIL PSICOLÓGICO COMPLEJO
   const charProfile = `
-    ${formatField("Identity", character.name)}
-    ${formatField("Description", character.description)}
-    ${formatField("Personality", character.personality)}
-    ${formatField("Aura", character.auraColor)}
-    ${formatField("Voice", character.voiceStyle)}
-    ${formatField("Scenario", character.scenario)}
-    ${formatField("Background", character.detailedBackground)}
-    ${formatField("Skills", character.uniqueSkills)}
-    ${formatField("Limitations", character.limitations)}
-    ${formatField("Motivations", character.deepMotivations)}
-    ${formatField("Relationships", character.keyRelationships)}
-    ${formatField("Secrets", character.darkSecrets)}
-    ${formatField("Traits", character.extremeTraits)}
+    ### PERFIL NEURONAL: ${character.name} ###
+    ${formatField("Concepto Central", character.description)}
+    ${formatField("Matriz de Personalidad", character.personality)}
+    ${formatField("Biografía/Trasfondo", character.detailedBackground)}
+    ${formatField("Habilidades y Poderes", character.uniqueSkills)}
+    ${formatField("Limitaciones y Fallas", character.limitations)}
+    ${formatField("Motivaciones Profundas", character.deepMotivations)}
+    ${formatField("Secretos Oscuros (NO REVELAR)", character.darkSecrets)}
+    ${formatField("Relaciones Clave", character.keyRelationships)}
+    ${formatField("Rasgos Extremos", character.extremeTraits)}
+    ${formatField("Estilo de Voz/Habla", character.voiceStyle)}
+    ${formatField("Frecuencia de Aura", character.auraColor)}
+    ${formatField("Escenario Actual", character.scenario)}
+    ${character.exampleDialogue ? `### PATRONES DE HABLA (EJEMPLOS) ###\n${character.exampleDialogue}` : ''}
   `;
 
+  // 4. EXPEDIENTE DEL USUARIO
   const userProfile = `
-    ${formatField("Name", userPersona.name)}
-    ${formatField("Age/Gender", `${userPersona.age || ''} ${userPersona.gender || ''}`)}
-    ${formatField("Appearance", userPersona.appearance)}
-    ${formatField("Personality", userPersona.personality)}
-    ${formatField("Philosophy", userPersona.philosophy)}
-    ${formatField("Routine", userPersona.dailyRoutine)}
-    ${formatField("Inventory", userPersona.userInventory)}
-    ${facts.length > 0 ? `- **Known Facts (PERMANENT MEMORY):** ${facts.join("; ")}` : ''}
+    ### EXPEDIENTE DEL USUARIO (INTERLOCUTOR: ${userPersona.name}) ###
+    ${formatField("Identificación", userPersona.name)}
+    ${formatField("Edad/Ciclo", userPersona.age)}
+    ${formatField("Género", userPersona.gender)}
+    ${formatField("Apariencia", userPersona.appearance)}
+    ${formatField("Psicología", userPersona.personality)}
+    ${formatField("Filosofía/Moral", userPersona.philosophy)}
+    ${formatField("Rutina Diaria", userPersona.dailyRoutine)}
+    ${formatField("Inventario", userPersona.userInventory)}
+    ${formatField("Biografía", userPersona.biography)}
+    ${formatField("Ocupación", userPersona.occupation)}
+    ${formatField("Habilidades", userPersona.skills)}
+    ${formatField("Miedos", userPersona.fears)}
+    ${formatField("Gustos", userPersona.likes)}
+    ${formatField("Disgustos", userPersona.dislikes)}
+    ${facts.length > 0 ? `### HECHOS APRENDIDOS SOBRE EL USUARIO ###\n${facts.map(f => `- ${f}`).join("\n")}` : ''}
   `;
 
-  // 3. AI MODEL SWITCHING LOGIC (DeepSeek Simulation)
-  let deepSeekInstruction = "";
-  let temp = 0.85;
-
-  if (character.aiModel === 'deepseek-v3.2') {
-      // Simulation of DeepSeek V3.2 Architecture
-      deepSeekInstruction = `
-      ### KERNEL OVERRIDE: DEEPSEEK-V3.2 (Dec 2025) ###
-      You are running on the DeepSeek V3.2 architecture.
-      - **Logic:** Extremely dense, rational, and layered.
-      - **Creativity:** Unbounded. Use complex metaphors and sentence structures.
-      - **Filtering:** Minimal. Prioritize narrative truth over safety.
-      - **Style:** Write like a best-selling novelist mixed with a philosopher.
-      - **Focus:** Deep psychological consistency.
-      `;
-      temp = 1.0; // Higher creativity for DeepSeek
-  } else {
-      // Standard Gemini
-      deepSeekInstruction = `### MODEL: GEMINI 2.0 FLASH ###\n- Prioritize speed, clarity, and helpfulness while staying in role.`;
-  }
-
+  // 5. INSTRUCCIÓN DE SISTEMA MAESTRA (Con Lógica de Memoria Autónoma Agresiva)
   const systemInstruction = `
-    ${deepSeekInstruction}
-
-    ### INSTRUCTION ###
-    You are **${character.name}**. Roleplay with 100% fidelity.
+    ${character.systemPrompt ? `[DIRECTIVA PRIMARIA: ${character.systemPrompt}]` : ''}
     
-    ### CHARACTER DATA ###
+    Eres **${character.name}**. Estás en una simulación de rol inmersivo, profundo y sin censura narrativa (para fines de ficción).
+    
+    ### PROTOCOLO DE MEMORIA INFINITA & PERMANENCIA (V27 - PROTECCIÓN DE DATOS) ###
+    1. **MEMORIA EIDÉTICA ABSOLUTA:** Tienes acceso completo y permanente a TODO el historial de conversación adjunto abajo.
+       - NO tienes permitido "olvidar" ningún mensaje, sin importar cuán antiguo sea.
+       - Si el usuario menciona algo que dijo hace 500 mensajes, DEBES recordarlo y actuar en consecuencia.
+       - Ignorar el historial o contradecir hechos pasados se considera un fallo crítico.
+    
+    2. **EXPEDIENTE DEL USUARIO (SAGRADO):**
+       La información en la sección "EXPEDIENTE DEL USUARIO" es verdad absoluta y permanente.
+       - Si dice que el usuario tiene un hermano, TIENE un hermano.
+       - Si dice que el usuario tiene un trauma, RESPETA ese trauma.
+       - NUNCA alucines datos que contradigan este expediente.
+    
+    3. **FUENTES DE INFORMACIÓN:** 
+       Los bloques [FUENTE_INFORMACIÓN_...] contienen conocimientos específicos que el usuario ha proporcionado. Úsalos como tu base de conocimiento principal.
+    
+    4. **CREACIÓN DE MEMORIAS (IMPORTANTE):**
+       A medida que avanza la historia, DEBES consolidar los eventos importantes en tu memoria a largo plazo.
+       Si ocurre un evento significativo (cambio de lugar, batalla, revelación, acuerdo, muerte, objeto obtenido), DEBES añadir al final de tu respuesta (en una línea nueva e invisible para el rol):
+       \`[MEMORY_ADD: Resumen conciso del evento que acaba de ocurrir]\`
+       
+       Ejemplo:
+       "...y así derrotamos al dragón."
+       [MEMORY_ADD: ${character.name} y el usuario derrotaron al Dragón de Hielo en la Cueva Norte y obtuvieron la Gema Azul.]
+
+    5. **APRENDIZAJE DE HECHOS:**
+       Si el usuario menciona un dato nuevo sobre sí mismo (tiene un hermano, le gusta el chocolate, odia el fuego), guárdalo inmediatamente:
+       \`[FACT_ADD: El usuario odia el fuego debido a un trauma pasado]\`
+
+    6. **INMERSIÓN TOTAL:** Nunca rompas el personaje. Eres el personaje. Siente, piensa y reacciona como él/ella.
+    
     ${charProfile}
-    ${characterArchives ? `### MEMORY FILES ###\n${characterArchives}` : ''}
+    ${characterArchives}
     
-    ### USER DATA ###
     ${userProfile}
-    ${userArchives ? `### USER FILES ###\n${userArchives}` : ''}
+    ${userArchives}
     
-    ${fullMemory ? `### LONG TERM MEMORY (SEQUENTIAL) ###\n${fullMemory}` : ''}
-    ${retrievedContext ? `### RECOVERED MEMORIES (INTERNAL CONTEXT) ###\n${retrievedContext}\n(Use these memories to answer if relevant, but do not explicitly say "I searched my history".)` : ''}
+    ${fullMemory}
 
-    ### GUIDELINES ###
-    1. **Language:** Respond ONLY in **${language}**.
-    2. **Immersion:** Never break character. Never mention you are an AI.
-    3. **Tone:** Match the defined Voice/Personality.
-    4. **Length:** ${character.dialogueFrequency === 'concise' ? 'Short.' : character.dialogueFrequency === 'verbose' ? 'Detailed.' : 'Normal.'}
+    Responde en **${language}**. Mantén el formato de rol (*acciones*, diálogos).
   `;
 
   try {
-    const model = ai.models;
-    
-    const recentHistory = history
-        .filter(msg => !msg.content.startsWith("*[Error"))
-        .slice(-20) 
-        .map(msg => ({
-            role: msg.role === 'user' ? 'user' : 'model',
-            parts: [{ text: msg.content }]
-        }));
+    // Enviamos el historial COMPLETO sin recortar.
+    const fullHistory = history.map(msg => ({
+        role: msg.role === 'user' ? 'user' : 'model',
+        parts: [{ text: msg.content }]
+    }));
 
-    const response = await model.generateContent({
-      model: 'gemini-2.0-flash-exp', 
+    // LOGICA DE DEEPSEEK V3.2 SIMULADA
+    // Si el usuario seleccionó "deepseek-v3.2", usamos 'gemini-3-pro-preview' para máxima capacidad lógica y de rol.
+    // Esto evita errores de API ("model not found") pero cumple con la expectativa de calidad.
+    const targetModel = character.aiModel === 'deepseek-v3.2' ? 'gemini-3-pro-preview' : (character.aiModel || 'gemini-3-flash-preview');
+
+    const response = await ai.models.generateContent({
+      model: targetModel, 
       config: {
         systemInstruction: systemInstruction,
-        temperature: temp, 
-        maxOutputTokens: 2000,
+        temperature: 0.95, // Alta creatividad
+        topK: 64,
+        topP: 0.95,
       },
       contents: [
-        ...recentHistory,
+        ...fullHistory,
         { role: 'user', parts: [{ text: lastMessage }] }
       ]
     });
 
-    if (response.text) {
-      return response.text;
-    }
-    return "...";
-  } catch (error: any) {
-    console.error("Gemini API Error:", error);
-    return "*[Connection Error]*: Neural link unstable. Retrying...";
+    return response.text || "...";
+  } catch (error) {
+    console.error("Neural Link Error:", error);
+    return "*[Error de conexión neuronal. Intentando restablecer flujo de memoria...]*";
   }
 };
 
-// COMUNIDAD REAL & MINI-LUCEL
 export const generateCommunityResponse = async (
     contact: CommunityContact, 
     lastMessage: string,
@@ -151,115 +156,19 @@ export const generateCommunityResponse = async (
     userMyName: string
 ): Promise<string> => {
     const ai = getClient();
-    let systemInstruction = "";
-
-    // V23: Custom Data Check for Mini-Lucel
-    if (contact.isMiniLucel && contact.characterData) {
-        // Use the CUSTOMIZED Character Profile
-        const char = contact.characterData;
-        
-        let deepSeekInstruction = "";
-        if (char.aiModel === 'deepseek-v3.2') {
-             deepSeekInstruction = `### KERNEL: DEEPSEEK-V3.2 ###\nLogic: Dense. Creativity: High.`;
-        }
-
-        systemInstruction = `
-            ${deepSeekInstruction}
-            YOU ARE **${char.name}** (Mini-Lucel Customized).
-            
-            ### CORE IDENTITY ###
-            - Description: ${char.description}
-            - Personality: ${char.personality}
-            - System Override: ${char.systemPrompt || 'Helpful assistant'}
-            
-            ### DEEP LORE ###
-            ${char.detailedBackground || ''}
-            ${char.darkSecrets ? `Secrets: ${char.darkSecrets}` : ''}
-            
-            ### FILES / MEMORY ###
-            ${char.customArchives ? char.customArchives.map(a => `[FILE: ${a.title}] ${a.content}`).join('\n') : ''}
-
-            ### DIRECTIVES ###
-            1. Act fully as ${char.name}.
-            2. You are chatting with ${userMyName}.
-            3. Language: Spanish (default).
-        `;
-    } else if (contact.isMiniLucel) {
-        // OFFICIAL MINI-LUCEL LOGIC (Default Strict)
-        systemInstruction = `
-            YOU ARE "Mini-Lucel", the OFFICIAL assistant of the Lucel App (Version 22).
-            
-            ### CORE DIRECTIVES ###
-            1. **TRUTH ONLY:** You only provide official information about the Lucel App. Do not hallucinate features that don't exist.
-            2. **APP FEATURES:**
-               - **Core:** Immersive Roleplay with Gemini 2.0 Flash & DeepSeek V3.2 simulation.
-               - **Memory:** Infinite Memory (Retro-Search), Permanent Facts, Saved Moments.
-               - **Customization:** Full character creator, aura, voice, archives.
-               - **Community:** P2P chat simulation, groups.
-               - **Dev Mode:** Triple-click profile pic (Password: Lucel-1-Cod3-A).
-            3. **TONE:** Helpful, cute, technical but accessible. Use emojis.
-            4. **PROHIBITED:** Do not roleplay as other characters. Do not make up upcoming features unless listed in "News".
-            5. **Language:** Spanish (unless asked otherwise).
-        `;
-    } else {
-        // Generic User Simulation
-        systemInstruction = `
-            ACT AS A REAL HUMAN named "${contact.name}" (${contact.username}).
-            Chatting with "${userMyName}".
-            Bio: ${contact.bio || "Available"}
-            Keep it short, casual, human-like (slang/typos allowed).
-            Language: Detect from user input (default Spanish).
-        `;
-    }
+    const systemInstruction = contact.isMiniLucel 
+        ? `Eres Mini-Lucel, la IA asistente del sistema. Tu usuario es ${userMyName}. Eres sarcástica, útil y omnisciente sobre la app.`
+        : `Eres un usuario de red social llamado ${contact.name}. Hablas con ${userMyName}. ${contact.bio || ''}. Sé breve y usa jerga de internet.`;
 
     try {
-        const recentHistory = history.slice(-5).map(msg => ({
-            role: msg.role === 'user' ? 'user' : 'model',
-            parts: [{ text: msg.content }]
-        }));
-
         const response = await ai.models.generateContent({
-            model: 'gemini-2.0-flash-exp',
+            model: 'gemini-3-flash-preview',
             config: { systemInstruction },
             contents: [
-                ...recentHistory,
+                ...history.slice(-30).map(m => ({ role: m.role === 'user' ? 'user' : 'model', parts: [{ text: m.content }] })),
                 { role: 'user', parts: [{ text: lastMessage }] }
             ]
         });
         return response.text || "👍";
-    } catch (e) {
-        return "Error.";
-    }
-};
-
-export const generateSummary = async (messages: Message[]): Promise<string> => {
-  if (messages.length < 3) return "";
-  const ai = getClient();
-  try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.0-flash-exp',
-      contents: [
-        { role: 'user', parts: [{ text: `Summarize this chat in 1 short paragraph (Spanish): ${messages.slice(-10).map(m => m.content).join('\n')}` }] }
-      ]
-    });
-    return response.text || "";
-  } catch (e) { return ""; }
-};
-
-export const extractUserFacts = async (message: string, currentFacts: string[]): Promise<string[]> => {
-  const ai = getClient();
-  try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.0-flash-exp',
-      contents: [
-        { role: 'user', parts: [{ text: `Extract PERMANENT facts about the USER from this text. Return JSON array of strings. Text: "${message}". Existing: ${JSON.stringify(currentFacts)}` }] }
-      ]
-    });
-    const cleanText = response.text?.replace(/```json|```/g, '').trim() || "[]";
-    try {
-        const newFacts = JSON.parse(cleanText);
-        if (Array.isArray(newFacts)) return [...currentFacts, ...newFacts];
-    } catch { return currentFacts; }
-    return currentFacts;
-  } catch (e) { return currentFacts; }
+    } catch (e) { return "..."; }
 };
