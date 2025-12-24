@@ -7,7 +7,7 @@ export interface Message {
   timestamp: number;
   isMemory?: boolean; // If saved to "Moments"
   attachment?: {
-      type: 'image' | 'file' | 'location' | 'poll' | 'sticker' | 'audio' | 'system';
+      type: 'image' | 'file' | 'location' | 'poll' | 'sticker' | 'audio' | 'system' | 'generated_image';
       url?: string;
       data?: any;
   };
@@ -36,6 +36,7 @@ export interface Character {
   exampleDialogue: string;
   
   isHidden?: boolean; // For the "Hidden Chats" feature
+  isFavorite?: boolean; // V35: Favorites Feature
 
   // New Deep RPG Fields
   detailedBackground?: string;       // Historia de Fondo Detallada
@@ -58,7 +59,7 @@ export interface Character {
 
   // V22: AI Core Selection
   // Updated model choice to gemini-3-flash-preview
-  aiModel?: 'gemini-3-flash-preview' | 'deepseek-v3.2';
+  aiModel?: 'gemini-3-flash-preview' | 'deepseek-v3.2' | 'gemini-2.5-flash-image' | 'gemini-3-pro-preview';
 }
 
 // Custom Theme for individual chats
@@ -74,6 +75,9 @@ export interface ChatTheme {
   // V12
   backgroundOpacity?: number; // Opacity of the background image overlay
   bubbleBorder?: boolean;
+  
+  // V36: Chat Specific Layout Preset
+  layoutPreset?: 'default' | 'whatsapp' | 'instagram' | 'messenger' | 'telegram';
 }
 
 export interface ChatSession {
@@ -87,6 +91,10 @@ export interface ChatSession {
   memoryBlocks: string[]; // V26: Multi-block infinite memory
   extractedUserFacts: string[]; // "Datos a detalles sobre lo que la IA sabe de ti"
   savedMoments: Message[]; // "Carpeta de Momentos"
+  
+  // V36: New Fields requested
+  aiRules?: string[]; // "Reglas de IA a seguir"
+  codeSnippets?: string[]; // "Código" storage
   
   // V8: Chat Personalization
   theme?: ChatTheme;
@@ -236,11 +244,24 @@ export interface AppSettings {
   secondaryColor?: string; // V10
   globalBg: string | null;
   appBackgroundColor: string; // V12: Solid background color
+  
+  // V35: New Visual Overrides
+  sidebarColor?: string; // Custom Sidebar Background
+  topbarColor?: string;  // Custom Topbar Background
+
   cardStyle: CardStyle;
   fontFamily: FontFamily;
   fontSize: 'small' | 'medium' | 'large';
   borderRadius: 'none' | 'sm' | 'md' | 'lg' | 'full'; // V10
   
+  // New Category Customization
+  categoryShape?: 'pill' | 'square' | 'rounded';
+  categorySize?: 'sm' | 'md' | 'lg';
+  customCategories?: string[];
+
+  // Styles Tab (New)
+  themePreset?: 'custom' | 'whatsapp' | 'instagram' | 'facebook' | 'messenger' | 'character_ai' | 'poly_ai' | 'telegram';
+
   // System
   language: string;
   reduceMotion: boolean;

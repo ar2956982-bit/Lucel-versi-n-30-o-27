@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Camera, Save, X, Book, Brain, Swords, Zap, HeartCrack, Lock, Sparkles, Globe, Backpack, FileText, Plus, Trash, Edit2, Cpu, Maximize2, Minimize2, Palette, Mic2, MessageSquare, ChevronRight, FolderPlus, File } from 'lucide-react';
 import { Character, CustomArchive } from '../types';
@@ -7,9 +6,10 @@ interface CharacterCreatorProps {
   onSave: (char: Character) => void;
   onCancel: () => void;
   initialData?: Character | null;
+  t: any; // Translations
 }
 
-const CharacterCreator: React.FC<CharacterCreatorProps> = ({ onSave, onCancel, initialData }) => {
+const CharacterCreator: React.FC<CharacterCreatorProps> = ({ onSave, onCancel, initialData, t }) => {
   const [activeTab, setActiveTab] = useState('basic');
   const [isMaximized, setIsMaximized] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
@@ -22,7 +22,6 @@ const CharacterCreator: React.FC<CharacterCreatorProps> = ({ onSave, onCancel, i
     voicePitch: 'Normal', dialogueFrequency: 'normal', customArchives: [], isHidden: false, aiModel: 'gemini-3-flash-preview'
   });
 
-  // Estado para gestionar los archivos en la UI
   const [localArchives, setLocalArchives] = useState<CustomArchive[]>([]);
 
   useEffect(() => { 
@@ -32,9 +31,39 @@ const CharacterCreator: React.FC<CharacterCreatorProps> = ({ onSave, onCancel, i
       }
   }, [initialData]);
 
-  // Sincronizar archivos locales con formData antes de guardar
+  useEffect(() => {
+    const handleFullScreenChange = () => {
+        if (!document.fullscreenElement) {
+            setIsMaximized(false);
+        }
+    };
+    document.addEventListener('fullscreenchange', handleFullScreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullScreenChange);
+  }, []);
+
+  const toggleFullScreen = () => {
+      if (!isMaximized) {
+          const elem = document.documentElement;
+          if (elem.requestFullscreen) {
+              elem.requestFullscreen().catch(err => console.log(err));
+          }
+          setIsMaximized(true);
+      } else {
+          if (document.exitFullscreen && document.fullscreenElement) {
+              document.exitFullscreen().catch(err => console.log(err));
+          }
+          setIsMaximized(false);
+      }
+  };
+
   const handleSave = () => {
-      onSave({ ...formData, customArchives: localArchives } as Character);
+      // FIX FOR CRASH: Ensure ID always exists
+      const finalId = formData.id || Date.now().toString();
+      onSave({ 
+          ...formData, 
+          id: finalId,
+          customArchives: localArchives 
+      } as Character);
   };
 
   const handleChange = (field: keyof Character, value: any) => setFormData(prev => ({ ...prev, [field]: value }));
@@ -45,6 +74,19 @@ const CharacterCreator: React.FC<CharacterCreatorProps> = ({ onSave, onCancel, i
           const reader = new FileReader();
           reader.onloadend = () => handleChange('avatar', reader.result as string);
           reader.readAsDataURL(file);
+      }
+  };
+
+  const handleAvatarDrop = (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+          const file = e.dataTransfer.files[0];
+          if (file.type.startsWith('image/')) {
+              const reader = new FileReader();
+              reader.onloadend = () => handleChange('avatar', reader.result as string);
+              reader.readAsDataURL(file);
+          }
       }
   };
 
@@ -66,37 +108,35 @@ const CharacterCreator: React.FC<CharacterCreatorProps> = ({ onSave, onCancel, i
       setLocalArchives(prev => prev.filter(a => a.id !== id));
   };
 
-  // Restauración de las 8 Pestañas Completas + ARCHIVOS
   const tabs = [
-    { id: 'basic', label: 'IDENTIDAD', icon: <Book size={14} /> },
-    { id: 'ai_core', label: 'NÚCLEO IA', icon: <Cpu size={14} /> },
-    { id: 'background', label: 'HISTORIA', icon: <HeartCrack size={14} /> },
-    { id: 'psych', label: 'PSIQUE', icon: <Brain size={14} /> },
-    { id: 'abilities', label: 'PODERES', icon: <Swords size={14} /> },
-    { id: 'secrets', label: 'SECRETOS', icon: <Lock size={14} /> },
-    { id: 'archives', label: 'ARCHIVOS', icon: <FolderPlus size={14} /> }, // NUEVA PESTAÑA
-    { id: 'soul', label: 'ALMA/AURA', icon: <Sparkles size={14} /> },
-    { id: 'system', label: 'SISTEMA', icon: <Zap size={14} /> },
+    { id: 'basic', label: t?.tab_identity || 'IDENTIDAD', icon: <Book size={14} /> },
+    { id: 'ai_core', label: t?.tab_aicore || 'NÚCLEO IA', icon: <Cpu size={14} /> },
+    { id: 'background', label: t?.tab_history || 'HISTORIA', icon: <HeartCrack size={14} /> },
+    { id: 'psych', label: t?.tab_psych || 'PSIQUE', icon: <Brain size={14} /> },
+    { id: 'abilities', label: t?.tab_power || 'PODERES', icon: <Swords size={14} /> },
+    { id: 'secrets', label: t?.tab_secrets || 'SECRETOS', icon: <Lock size={14} /> },
+    { id: 'archives', label: t?.tab_files || 'ARCHIVOS', icon: <FolderPlus size={14} /> },
+    { id: 'soul', label: t?.tab_soul || 'ALMA/AURA', icon: <Sparkles size={14} /> },
+    { id: 'system', label: t?.tab_sys || 'SISTEMA', icon: <Zap size={14} /> },
   ];
 
   return (
     <div className={`mx-auto bg-[#020617] border border-gray-800 rounded-lg overflow-hidden shadow-2xl flex flex-col transition-all duration-300 ${isMaximized ? 'fixed inset-0 z-[150] rounded-none' : 'max-w-6xl h-[90vh] relative'}`}>
-      {/* Header Técnico */}
+      {/* Header */}
       <div className="h-14 border-b border-gray-800 flex justify-between items-center bg-black/60 px-4 shrink-0 backdrop-blur-md">
         <div className="flex items-center gap-4">
            <div className="flex items-center gap-2 text-primary">
                <Cpu size={18} className="animate-pulse" />
-               <h2 className="text-sm font-black font-mono uppercase tracking-[0.2em]">{initialData ? 'EDITAR_VÍNCULO :: V26' : 'CREAR_NUEVO_VÍNCULO :: V26'}</h2>
+               <h2 className="text-sm font-black font-mono uppercase tracking-[0.2em]">{initialData ? (t?.edit_title || 'EDITAR_VÍNCULO') : (t?.creator_title || 'CREAR_NUEVO_VÍNCULO')} :: V26</h2>
            </div>
-           <button onClick={() => setIsMaximized(!isMaximized)} className="px-2 py-1 bg-gray-900 border border-gray-700 rounded text-[10px] text-gray-400 hover:text-white hover:border-primary transition-all uppercase font-bold flex items-center gap-1">
+           <button onClick={toggleFullScreen} className="px-2 py-1 bg-gray-900 border border-gray-700 rounded text-[10px] text-gray-400 hover:text-white hover:border-primary transition-all uppercase font-bold flex items-center gap-1">
              {isMaximized ? <Minimize2 size={10}/> : <Maximize2 size={10}/>} {isMaximized ? 'REDUCIR' : 'MAXIMIZAR'}
            </button>
         </div>
-        <button onClick={onCancel} className="text-gray-500 hover:text-red-500 transition-colors"><X size={20}/></button>
+        <button onClick={() => { if(isMaximized) toggleFullScreen(); onCancel(); }} className="text-gray-500 hover:text-red-500 transition-colors"><X size={20}/></button>
       </div>
 
       <div className="flex flex-1 overflow-hidden">
-          {/* Sidebar Tabs */}
           <div className="w-16 md:w-48 bg-[#050505] border-r border-gray-800 flex flex-col overflow-y-auto shrink-0 no-scrollbar py-2">
             {tabs.map((tab) => (
               <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex items-center gap-3 px-4 py-4 text-[10px] font-black uppercase tracking-widest transition-all border-l-2 ${activeTab === tab.id ? 'text-primary border-primary bg-primary/5 shadow-[inset_10px_0_20px_rgba(245,158,11,0.05)]' : 'text-gray-600 hover:text-gray-300 border-transparent hover:bg-white/5'}`}>
@@ -106,7 +146,6 @@ const CharacterCreator: React.FC<CharacterCreatorProps> = ({ onSave, onCancel, i
             ))}
           </div>
 
-          {/* Content Area - Dense & Technical */}
           <div className="flex-1 p-6 md:p-8 overflow-y-auto custom-scrollbar bg-[#0b0d10] relative">
             <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-primary/20 to-transparent"></div>
             
@@ -114,11 +153,16 @@ const CharacterCreator: React.FC<CharacterCreatorProps> = ({ onSave, onCancel, i
               <div className="space-y-6 animate-fade-in">
                 <div className="flex flex-col md:flex-row gap-8">
                     <div className="w-full md:w-1/3">
-                        <div className="aspect-[3/4] bg-gray-900 rounded border border-gray-700 relative group overflow-hidden cursor-pointer hover:border-primary transition-all shadow-lg" onClick={() => avatarInputRef.current?.click()}>
+                        <div 
+                            className="aspect-[3/4] bg-gray-900 rounded border border-gray-700 relative group overflow-hidden cursor-pointer hover:border-primary transition-all shadow-lg" 
+                            onClick={() => avatarInputRef.current?.click()}
+                            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                            onDrop={handleAvatarDrop}
+                        >
                             <img src={formData.avatar} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
                             <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity backdrop-blur-sm">
                                 <Camera className="text-primary mb-2" />
-                                <span className="text-[9px] text-white font-black uppercase tracking-widest border border-white/20 px-2 py-1 rounded">Cargar Imagen</span>
+                                <span className="text-[9px] text-white font-black uppercase tracking-widest border border-white/20 px-2 py-1 rounded">Arrastrar o Clic</span>
                             </div>
                             <input type="file" ref={avatarInputRef} accept="image/*" className="hidden" onChange={handleAvatarUpload} />
                         </div>
@@ -129,28 +173,28 @@ const CharacterCreator: React.FC<CharacterCreatorProps> = ({ onSave, onCancel, i
                     </div>
                     
                     <div className="flex-1 space-y-5">
+                        {/* ... Basic Fields ... */}
                         <div className="space-y-1">
-                            <label className="text-[10px] font-black text-primary uppercase tracking-widest flex items-center gap-2"><div className="w-1 h-1 bg-primary rounded-full"></div> Nombre del Vínculo</label>
+                            <label className="text-[10px] font-black text-primary uppercase tracking-widest flex items-center gap-2"><div className="w-1 h-1 bg-primary rounded-full"></div> {t?.label_name || 'Nombre del Vínculo'}</label>
                             <input type="text" value={formData.name} onChange={e => handleChange('name', e.target.value)} className="w-full bg-gray-900 border border-gray-700 rounded p-3 text-white text-sm focus:border-primary outline-none font-bold tracking-wide" placeholder="Escribe el nombre..." />
                         </div>
                         <div className="space-y-1">
-                            <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Descripción Corta</label>
+                            <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">{t?.label_desc || 'Descripción Corta'}</label>
                             <input type="text" value={formData.description} onChange={e => handleChange('description', e.target.value)} className="w-full bg-gray-900 border border-gray-700 rounded p-3 text-gray-300 text-xs focus:border-primary outline-none" placeholder="Breve descripción..." />
                         </div>
                         <div className="space-y-1">
-                            <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Primer Mensaje (Hook)</label>
+                            <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">{t?.label_first || 'Primer Mensaje (Hook)'}</label>
                             <textarea value={formData.firstMessage} onChange={e => handleChange('firstMessage', e.target.value)} className="w-full bg-gray-900 border border-gray-700 rounded p-3 text-gray-300 text-xs focus:border-primary outline-none h-32 resize-none font-mono" placeholder="El mensaje inicial que enviará..." />
                         </div>
                     </div>
                 </div>
               </div>
             )}
-
+            {/* ... Other tabs ... */}
             {activeTab === 'ai_core' && (
               <div className="space-y-6 animate-fade-in">
                  <div className="space-y-2">
                     <label className="text-[10px] font-black text-primary uppercase tracking-widest block mb-1">Instrucción Maestra (System Prompt)</label>
-                    <p className="text-[9px] text-gray-500 mb-2">Define la esencia fundamental de la IA. Estas instrucciones son prioritarias.</p>
                     <textarea value={formData.systemPrompt} onChange={e => handleChange('systemPrompt', e.target.value)} className="w-full bg-gray-950 border border-gray-800 rounded p-4 text-green-500 font-mono text-xs h-64 focus:border-green-500 outline-none leading-relaxed shadow-inner" placeholder="Ej: Eres una IA sarcástica del año 3050..." />
                  </div>
                  <div className="space-y-2">
@@ -214,11 +258,6 @@ const CharacterCreator: React.FC<CharacterCreatorProps> = ({ onSave, onCancel, i
                     </div>
                     
                     <div className="flex-1 overflow-y-auto space-y-4 custom-scrollbar">
-                        {localArchives.length === 0 && (
-                            <div className="text-center py-10 text-gray-600 text-xs italic border-2 border-dashed border-gray-800 rounded-lg">
-                                No hay archivos creados. Añade fuentes de conocimiento para la IA.
-                            </div>
-                        )}
                         {localArchives.map((arch, index) => (
                             <div key={arch.id} className="bg-[#0f172a] border border-gray-800 rounded-lg p-4 space-y-3 group hover:border-yellow-600/50 transition-colors">
                                 <div className="flex justify-between items-center">
@@ -261,7 +300,8 @@ const CharacterCreator: React.FC<CharacterCreatorProps> = ({ onSave, onCancel, i
                     <select value={formData.aiModel} onChange={e => handleChange('aiModel', e.target.value)} className="w-full bg-black border border-gray-800 rounded p-3 text-white text-xs font-mono">
                         <option value="gemini-3-flash-preview">Gemini 3.0 Flash (Velocidad)</option>
                         <option value="gemini-3-pro-preview">Gemini 3.0 Pro (Razonamiento Complejo)</option>
-                        <option value="deepseek-v3.2">DeepSeek V3.2 (01/12/2025 - Rol Inmersivo)</option>
+                        <option value="deepseek-v3.2">DeepSeek V3.2 (Rol Inmersivo)</option>
+                        <option value="gemini-2.5-flash-image">Gemini 2.5 Image (Generador Visual)</option>
                     </select>
                   </div>
                   <div className="flex items-center justify-between p-4 bg-[#0f172a] rounded border border-gray-800">

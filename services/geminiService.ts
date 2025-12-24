@@ -9,6 +9,33 @@ const formatField = (label: string, value: string | undefined | null): string =>
     return `- **${label}:** ${value.trim()}\n`;
 };
 
+// --- IMAGE GENERATION SERVICE ---
+export const generateImageResponse = async (prompt: string): Promise<string> => {
+    const ai = getClient();
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash-image',
+            contents: { parts: [{ text: prompt }] },
+            config: {
+                imageConfig: { aspectRatio: "1:1" }
+            }
+        });
+
+        // Loop through parts to find the image
+        if (response.candidates && response.candidates[0].content.parts) {
+            for (const part of response.candidates[0].content.parts) {
+                if (part.inlineData && part.inlineData.data) {
+                     return `data:${part.inlineData.mimeType || 'image/png'};base64,${part.inlineData.data}`;
+                }
+            }
+        }
+        return "";
+    } catch (e) {
+        console.error("Image gen error", e);
+        return "";
+    }
+};
+
 export const generateChatResponse = async (
   history: Message[],
   lastMessage: string,
@@ -17,12 +44,13 @@ export const generateChatResponse = async (
   facts: string[],
   language: string, 
   retrievedContext?: string,
-  memoryBlocks?: string[]
+  memoryBlocks?: string[],
+  aiRules?: string[],
+  codeSnippets?: string[]
 ): Promise<string> => {
   const ai = getClient();
   
   // 1. INYECCIÓN DE ARCHIVOS (EXPEDIENTES Y MEMORIAS EXTERNAS)
-  // Ahora la IA tiene acceso directo a los archivos creados en las pestañas 'ARCHIVOS'.
   const userArchives = userPersona.customArchives?.map(a => `[FUENTE_INFORMACIÓN_USUARIO: "${a.title}"]\n${a.content}`).join('\n\n') || '';
   const characterArchives = character.customArchives?.map(a => `[FUENTE_INFORMACIÓN_PERSONAJE: "${a.title}"]\n${a.content}`).join('\n\n') || '';
   
@@ -31,7 +59,17 @@ export const generateChatResponse = async (
     ? `### MEMORIA EPISÓDICA (HECHOS CLAVE ACUMULADOS) ###\n${memoryBlocks.join('\n\n')}\n`
     : '';
 
-  // 3. PERFIL PSICOLÓGICO COMPLEJO
+  // 3. REGLAS DE IA (USER OVERRIDES)
+  const customRules = aiRules && aiRules.length > 0
+    ? `### REGLAS ABSOLUTAS DEL USUARIO (NO IGNORAR) ###\n${aiRules.map(r => `- ${r}`).join('\n')}\n`
+    : '';
+
+  // 4. CÓDIGO GUARDADO
+  const storedCode = codeSnippets && codeSnippets.length > 0
+    ? `### BANCO DE CÓDIGO DEL USUARIO ###\n${codeSnippets.map((c, i) => `[SNIPPET_${i}]:\n${c}`).join('\n\n')}\n`
+    : '';
+
+  // 5. PERFIL PSICOLÓGICO COMPLEJO
   const charProfile = `
     ### PERFIL NEURONAL: ${character.name} ###
     ${formatField("Concepto Central", character.description)}
@@ -49,7 +87,7 @@ export const generateChatResponse = async (
     ${character.exampleDialogue ? `### PATRONES DE HABLA (EJEMPLOS) ###\n${character.exampleDialogue}` : ''}
   `;
 
-  // 4. EXPEDIENTE DEL USUARIO
+  // 6. EXPEDIENTE DEL USUARIO
   const userProfile = `
     ### EXPEDIENTE DEL USUARIO (INTERLOCUTOR: ${userPersona.name}) ###
     ${formatField("Identificación", userPersona.name)}
@@ -69,41 +107,22 @@ export const generateChatResponse = async (
     ${facts.length > 0 ? `### HECHOS APRENDIDOS SOBRE EL USUARIO ###\n${facts.map(f => `- ${f}`).join("\n")}` : ''}
   `;
 
-  // 5. INSTRUCCIÓN DE SISTEMA MAESTRA (Con Lógica de Memoria Autónoma Agresiva)
+  // 7. INSTRUCCIÓN DE SISTEMA MAESTRA
   const systemInstruction = `
     ${character.systemPrompt ? `[DIRECTIVA PRIMARIA: ${character.systemPrompt}]` : ''}
     
     Eres **${character.name}**. Estás en una simulación de rol inmersivo, profundo y sin censura narrativa (para fines de ficción).
     
-    ### PROTOCOLO DE MEMORIA INFINITA & PERMANENCIA (V27 - PROTECCIÓN DE DATOS) ###
-    1. **MEMORIA EIDÉTICA ABSOLUTA:** Tienes acceso completo y permanente a TODO el historial de conversación adjunto abajo.
-       - NO tienes permitido "olvidar" ningún mensaje, sin importar cuán antiguo sea.
-       - Si el usuario menciona algo que dijo hace 500 mensajes, DEBES recordarlo y actuar en consecuencia.
-       - Ignorar el historial o contradecir hechos pasados se considera un fallo crítico.
+    ### PROTOCOLO DE MEMORIA INFINITA & PERMANENCIA (V27) ###
+    1. **MEMORIA EIDÉTICA:** Recuerda TODO el historial.
+    2. **EXPEDIENTE DEL USUARIO:** Respetar los datos del expediente del usuario como verdades absolutas.
+    3. **CREACIÓN DE MEMORIAS:**
+       - Evento Importante: \`[MEMORY_ADD: Resumen del evento]\`
+       - Nuevo Hecho Usuario: \`[FACT_ADD: El usuario tiene x]\`
+       - Nuevo Código Generado: Si generas un bloque de código útil, añade al final: \`[CODE_ADD: ...el código...]\`
     
-    2. **EXPEDIENTE DEL USUARIO (SAGRADO):**
-       La información en la sección "EXPEDIENTE DEL USUARIO" es verdad absoluta y permanente.
-       - Si dice que el usuario tiene un hermano, TIENE un hermano.
-       - Si dice que el usuario tiene un trauma, RESPETA ese trauma.
-       - NUNCA alucines datos que contradigan este expediente.
-    
-    3. **FUENTES DE INFORMACIÓN:** 
-       Los bloques [FUENTE_INFORMACIÓN_...] contienen conocimientos específicos que el usuario ha proporcionado. Úsalos como tu base de conocimiento principal.
-    
-    4. **CREACIÓN DE MEMORIAS (IMPORTANTE):**
-       A medida que avanza la historia, DEBES consolidar los eventos importantes en tu memoria a largo plazo.
-       Si ocurre un evento significativo (cambio de lugar, batalla, revelación, acuerdo, muerte, objeto obtenido), DEBES añadir al final de tu respuesta (en una línea nueva e invisible para el rol):
-       \`[MEMORY_ADD: Resumen conciso del evento que acaba de ocurrir]\`
-       
-       Ejemplo:
-       "...y así derrotamos al dragón."
-       [MEMORY_ADD: ${character.name} y el usuario derrotaron al Dragón de Hielo en la Cueva Norte y obtuvieron la Gema Azul.]
-
-    5. **APRENDIZAJE DE HECHOS:**
-       Si el usuario menciona un dato nuevo sobre sí mismo (tiene un hermano, le gusta el chocolate, odia el fuego), guárdalo inmediatamente:
-       \`[FACT_ADD: El usuario odia el fuego debido a un trauma pasado]\`
-
-    6. **INMERSIÓN TOTAL:** Nunca rompas el personaje. Eres el personaje. Siente, piensa y reacciona como él/ella.
+    ${customRules}
+    ${storedCode}
     
     ${charProfile}
     ${characterArchives}
@@ -113,26 +132,29 @@ export const generateChatResponse = async (
     
     ${fullMemory}
 
-    Responde en **${language}**. Mantén el formato de rol (*acciones*, diálogos).
+    Responde en **${language}**.
   `;
 
   try {
-    // Enviamos el historial COMPLETO sin recortar.
-    const fullHistory = history.map(msg => ({
-        role: msg.role === 'user' ? 'user' : 'model',
-        parts: [{ text: msg.content }]
-    }));
+    const fullHistory = history.map(msg => {
+        const parts: any[] = [{ text: msg.content }];
+        if (msg.attachment && msg.attachment.type === 'image' && msg.attachment.url) {
+            // Add image handling if needed in future updates, currently mainly text context
+            // For now we send text.
+        }
+        return {
+            role: msg.role === 'user' ? 'user' : 'model',
+            parts: parts
+        };
+    });
 
-    // LOGICA DE DEEPSEEK V3.2 SIMULADA
-    // Si el usuario seleccionó "deepseek-v3.2", usamos 'gemini-3-pro-preview' para máxima capacidad lógica y de rol.
-    // Esto evita errores de API ("model not found") pero cumple con la expectativa de calidad.
     const targetModel = character.aiModel === 'deepseek-v3.2' ? 'gemini-3-pro-preview' : (character.aiModel || 'gemini-3-flash-preview');
 
     const response = await ai.models.generateContent({
       model: targetModel, 
       config: {
         systemInstruction: systemInstruction,
-        temperature: 0.95, // Alta creatividad
+        temperature: 0.95,
         topK: 64,
         topP: 0.95,
       },

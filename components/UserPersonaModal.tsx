@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { X, Fingerprint, User, Heart, Lock, BookOpen, Activity, FileText, Camera, Briefcase, Clock, Compass, Maximize2, Minimize2, Save, Ruler, Eye, Scissors, Shirt, FolderPlus, Trash, File } from 'lucide-react';
 import { UserPersona, CustomArchive } from '../types';
@@ -17,7 +16,6 @@ const UserPersonaModal: React.FC<UserPersonaModalProps> = ({ isOpen, onClose, pe
   const [data, setData] = useState<UserPersona>(persona);
   const avatarInputRef = useRef<HTMLInputElement>(null);
   
-  // Estado local para archivos del usuario
   const [localArchives, setLocalArchives] = useState<CustomArchive[]>([]);
 
   useEffect(() => { 
@@ -45,6 +43,19 @@ const UserPersonaModal: React.FC<UserPersonaModalProps> = ({ isOpen, onClose, pe
       }
   };
 
+  const handleAvatarDrop = (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+          const file = e.dataTransfer.files[0];
+          if (file.type.startsWith('image/')) {
+              const reader = new FileReader();
+              reader.onloadend = () => handleChange('avatar', reader.result as string);
+              reader.readAsDataURL(file);
+          }
+      }
+  };
+
   const addArchive = () => {
       const newArchive: CustomArchive = {
           id: Date.now().toString(),
@@ -63,18 +74,17 @@ const UserPersonaModal: React.FC<UserPersonaModalProps> = ({ isOpen, onClose, pe
       setLocalArchives(prev => prev.filter(a => a.id !== id));
   };
 
-  // Restauración de las 9 Pestañas Originales + ARCHIVOS
   const tabs = [
-    { id: 'general', icon: <User size={14} />, label: 'IDENTIDAD' },
-    { id: 'appearance', icon: <Fingerprint size={14} />, label: 'APARIENCIA' },
-    { id: 'psych', icon: <Heart size={14} />, label: 'PSIQUE' },
-    { id: 'philosophy', icon: <Compass size={14} />, label: 'FILOSOFÍA' },
-    { id: 'routine', icon: <Clock size={14} />, label: 'RUTINA' },
-    { id: 'inventory', icon: <Briefcase size={14} />, label: 'INVENTARIO' },
-    { id: 'background', icon: <BookOpen size={14} />, label: 'TRASFONDO' },
-    { id: 'skills', icon: <Activity size={14} />, label: 'HABILIDADES' },
-    { id: 'secrets', icon: <Lock size={14} />, label: 'SECRETOS' },
-    { id: 'archives', icon: <FolderPlus size={14} />, label: 'ARCHIVOS' }, // NUEVA PESTAÑA
+    { id: 'general', icon: <User size={14} />, label: t?.tab_identity || 'IDENTIDAD' },
+    { id: 'appearance', icon: <Fingerprint size={14} />, label: t?.tab_appearance || 'APARIENCIA' },
+    { id: 'psych', icon: <Heart size={14} />, label: t?.tab_psych || 'PSIQUE' },
+    { id: 'philosophy', icon: <Compass size={14} />, label: t?.tab_phil || 'FILOSOFÍA' },
+    { id: 'routine', icon: <Clock size={14} />, label: t?.tab_routine || 'RUTINA' },
+    { id: 'inventory', icon: <Briefcase size={14} />, label: t?.tab_inv || 'INVENTARIO' },
+    { id: 'background', icon: <BookOpen size={14} />, label: t?.tab_bg || 'TRASFONDO' },
+    { id: 'skills', icon: <Activity size={14} />, label: t?.tab_skills || 'HABILIDADES' },
+    { id: 'secrets', icon: <Lock size={14} />, label: t?.tab_secrets || 'SECRETOS' },
+    { id: 'archives', icon: <FolderPlus size={14} />, label: t?.tab_files || 'ARCHIVOS' },
   ];
 
   return (
@@ -83,14 +93,13 @@ const UserPersonaModal: React.FC<UserPersonaModalProps> = ({ isOpen, onClose, pe
         {/* Header */}
         <div className="h-14 border-b border-gray-800 flex justify-between items-center bg-purple-950/10 px-4 shrink-0">
           <div className="flex items-center gap-4">
-              <h2 className="text-sm font-black text-white flex items-center gap-2 font-brand uppercase tracking-[0.2em]"><Fingerprint className="text-purple-500" size={18} /> EXPEDIENTE NEURONAL DEL USUARIO</h2>
+              <h2 className="text-sm font-black text-white flex items-center gap-2 font-brand uppercase tracking-[0.2em]"><Fingerprint className="text-purple-500" size={18} /> {t?.user_file_title || 'EXPEDIENTE NEURONAL'}</h2>
               <button onClick={() => setIsMaximized(!isMaximized)} className="text-purple-400 hover:text-white transition-colors p-1">{isMaximized ? <Minimize2 size={14}/> : <Maximize2 size={14}/>}</button>
           </div>
           <button onClick={onClose} className="text-gray-500 hover:text-white p-2 transition-all"><X size={20}/></button>
         </div>
 
         <div className="flex flex-1 overflow-hidden">
-            {/* Sidebar */}
             <div className="w-16 md:w-52 bg-black/20 border-r border-gray-800 flex flex-col overflow-y-auto no-scrollbar py-2">
                 {tabs.map(tab => (
                     <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex items-center gap-3 px-4 py-4 text-[10px] font-black uppercase tracking-widest transition-all border-l-2 ${activeTab === tab.id ? 'bg-purple-500/10 text-purple-300 border-purple-500' : 'text-gray-600 hover:text-gray-400 border-transparent hover:bg-white/5'}`}>
@@ -99,15 +108,19 @@ const UserPersonaModal: React.FC<UserPersonaModalProps> = ({ isOpen, onClose, pe
                 ))}
             </div>
 
-            {/* Content Area */}
             <div className="flex-1 p-6 md:p-8 overflow-y-auto custom-scrollbar bg-black/40 relative">
                 
                 {activeTab === 'general' && (
                     <div className="space-y-8 animate-fade-in">
                         <div className="flex flex-col md:flex-row items-center gap-10">
-                            <div className="w-32 h-32 rounded-full border-2 border-purple-500/50 p-1 relative group cursor-pointer shadow-[0_0_30px_rgba(168,85,247,0.15)]" onClick={() => avatarInputRef.current?.click()}>
+                            <div 
+                                className="w-32 h-32 rounded-full border-2 border-purple-500/50 p-1 relative group cursor-pointer shadow-[0_0_30px_rgba(168,85,247,0.15)]" 
+                                onClick={() => avatarInputRef.current?.click()}
+                                onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                                onDrop={handleAvatarDrop}
+                            >
                                 <img src={data.avatar} className="w-full h-full rounded-full object-cover bg-gray-900" />
-                                <div className="absolute inset-0 bg-black/60 rounded-full flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><Camera size={20} className="text-white"/><span className="text-[8px] font-black uppercase text-white tracking-widest mt-1">Cambiar</span></div>
+                                <div className="absolute inset-0 bg-black/60 rounded-full flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><Camera size={20} className="text-white"/><span className="text-[8px] font-black uppercase text-white tracking-widest mt-1">Arrastrar</span></div>
                                 <input type="file" ref={avatarInputRef} accept="image/*" className="hidden" onChange={handleAvatarUpload} />
                             </div>
                             <div className="flex-1 w-full space-y-4">
@@ -120,7 +133,7 @@ const UserPersonaModal: React.FC<UserPersonaModalProps> = ({ isOpen, onClose, pe
                         </div>
                     </div>
                 )}
-
+                {/* ... other tabs ... */}
                 {activeTab === 'appearance' && (
                    <div className="space-y-6 animate-fade-in">
                       <div className="grid grid-cols-2 gap-6">
@@ -195,11 +208,6 @@ const UserPersonaModal: React.FC<UserPersonaModalProps> = ({ isOpen, onClose, pe
                         </div>
                         
                         <div className="flex-1 overflow-y-auto space-y-4 custom-scrollbar">
-                            {localArchives.length === 0 && (
-                                <div className="text-center py-10 text-gray-600 text-xs italic border-2 border-dashed border-gray-800 rounded-lg">
-                                    No hay archivos creados. Añade fuentes de conocimiento sobre ti.
-                                </div>
-                            )}
                             {localArchives.map((arch, index) => (
                                 <div key={arch.id} className="bg-[#0f172a] border border-gray-800 rounded-lg p-4 space-y-3 group hover:border-purple-600/50 transition-colors">
                                     <div className="flex justify-between items-center">
